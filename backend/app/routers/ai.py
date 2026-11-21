@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -17,45 +17,58 @@ from ..i18n import t
 from ..models import Application, CreditOrder, Document, Scholarship, User
 from ..quota import can_use_ai
 from ..routers.profile import get_profile
-from ..security import admin_user, current_user
+from ..security import admin_user, current_user, verified_user
 
 router = APIRouter(prefix="/api", tags=["CV, lettres et dossiers"])
 
 
 # ------------------------------------------------------------------ schémas
+CV_MAX = 30_000  # caractères : un CV de plusieurs pages tient largement
+ANSWER_MAX = 3_000
+
+
 class CVReviewIn(BaseModel):
-    text: str | None = None  # vide = CV importé dans le profil
+    text: str | None = Field(default=None, max_length=CV_MAX)  # vide = CV importé dans le profil
     scholarship_id: int | None = None
 
 
 class CVAdaptIn(BaseModel):
     scholarship_id: int | None = None
-    text: str | None = None
+    text: str | None = Field(default=None, max_length=CV_MAX)
 
 
 class LetterIn(BaseModel):
     scholarship_id: int
-    target_program: str = ""
-    why_country: str = ""
-    why_program: str = ""
-    study_plan: str = ""
-    project_after: str = ""
-    proud_of: str = ""
-    extra: str = ""
-    recipient_address: str = ""
+    target_program: str = Field(default="", max_length=ANSWER_MAX)
+    why_country: str = Field(default="", max_length=ANSWER_MAX)
+    why_program: str = Field(default="", max_length=ANSWER_MAX)
+    study_plan: str = Field(default="", max_length=ANSWER_MAX)
+    project_after: str = Field(default="", max_length=ANSWER_MAX)
+    proud_of: str = Field(default="", max_length=ANSWER_MAX)
+    extra: str = Field(default="", max_length=ANSWER_MAX)
+    recipient_address: str = Field(default="", max_length=1000)
     language: str = Field(default="", pattern="^(|fr|en)$")
     max_words: int = Field(default=450, ge=200, le=1000)
-    tone: str = "sobre"  # sobre | chaleureux | dynamique
+    tone: str = Field(default="sobre", max_length=20)  # sobre | chaleureux | dynamique
 
 
 class DocUpdate(BaseModel):
     data: dict
 
+    @field_validator("data")
+    @classmethod
+    def _size(cls, v: dict) -> dict:
+        import json
+
+        if len(json.dumps(v, ensure_ascii=False, default=str)) > 200_000:
+            raise ValueError("document trop long")
+        return v
+
 
 class OrderIn(BaseModel):
-    method: str
-    reference: str = ""
-    payer_phone: str = ""
+    method: str = Field(max_length=40)
+    reference: str = Field(default="", max_length=120)
+    payer_phone: str = Field(default="", max_length=50)
 
 
 class OrderStatus(BaseModel):
@@ -237,7 +250,7 @@ def my_credits(user: User = Depends(current_user), db: Session = Depends(get_db)
 
 
 @router.post("/credits/orders", status_code=201)
-def new_order(body: OrderIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def new_order(body: OrderIn, user: User = Depends(verified_user), db: Session = Depends(get_db)):
     o = credits.create_order(user, body.method, body.reference, body.payer_phone, db)
     return _order_out(o)
 

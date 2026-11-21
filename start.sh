@@ -6,8 +6,12 @@ cd "$(dirname "$0")"
 if [ ! -x backend/.venv/bin/python ]; then
   python3 -m venv backend/.venv
 fi
-if ! backend/.venv/bin/python -c "import fastapi, uvicorn, sqlalchemy, pydantic_settings, jwt, httpx, bs4" 2>/dev/null; then
+if ! backend/.venv/bin/python -c "import fastapi, uvicorn, sqlalchemy, pydantic_settings, jwt, httpx, bs4, alembic" 2>/dev/null; then
   backend/.venv/bin/pip install -q -r backend/requirements-dev.txt
+fi
+# Poste de développement (comptes de démo, /docs, cookie sans « Secure »), sauf si backend/.env fixe APP_ENV
+if [ -z "${APP_ENV:-}" ] && ! grep -qE '^\s*APP_ENV\s*=' backend/.env 2>/dev/null; then
+  export APP_ENV=dev
 fi
 # Crée la base ou la met à jour sans doublons
 (cd backend && .venv/bin/python -m app.cli seed)

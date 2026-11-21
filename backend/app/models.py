@@ -107,6 +107,12 @@ class User(Base):
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     lang: Mapped[str] = mapped_column(String(2), default="fr")  # langue choisie sur le site (alertes, e-mails)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # Sécurité du compte
+    email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Augmenté à chaque changement de mot de passe : les sessions et liens émis avant deviennent invalides.
+    token_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # Date d'acceptation des conditions et de la politique de confidentialité (inscription)
+    terms_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     profile: Mapped["Profile"] = relationship(back_populates="user", uselist=False, cascade="all, delete-orphan")
     applications: Mapped[list["Application"]] = relationship(back_populates="user", cascade="all, delete-orphan")
@@ -116,6 +122,10 @@ class User(Base):
     coachings: Mapped[list["Coaching"]] = relationship(back_populates="student", cascade="all, delete-orphan")
     doc_packs: Mapped[list["DocPack"]] = relationship(cascade="all, delete-orphan")
     credit_orders: Mapped[list["CreditOrder"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+
+    @property
+    def email_verified(self) -> bool:
+        return self.email_verified_at is not None
 
     @property
     def is_advisor(self) -> bool:
@@ -160,6 +170,16 @@ class Profile(Base):
 
     # Facultatif (sensible) : débloque des bourses ciblées
     situations: Mapped[list] = mapped_column(JSON, default=list)  # refugie, handicap, revenus_modestes, premiere_generation, femmes
+    # Consentement explicite à l'utilisation de ces données sensibles (obligatoire pour les enregistrer)
+    sensitive_consent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    def sync_sensitive_consent(self) -> None:
+        """Cocher une de ces situations, sous le texte qui explique leur usage, vaut consentement :
+        on en garde la date. Tout décocher retire le consentement."""
+        if self.situations and self.sensitive_consent_at is None:
+            self.sensitive_consent_at = utcnow()
+        elif not self.situations:
+            self.sensitive_consent_at = None
 
     cv_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     # En-tête des CV et lettres

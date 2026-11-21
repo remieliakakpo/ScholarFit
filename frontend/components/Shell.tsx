@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { setToken } from "@/lib/api";
+import { api, signOut } from "@/lib/api";
 import { Me, useAuth } from "@/lib/useAuth";
 import AuthModal from "./AuthModal";
 import Footer from "./Footer";
@@ -33,7 +33,31 @@ const TITLES: [string, string][] = [
   ["/admin", "Administration"],
 ];
 
-const PUBLIC_PATHS = ["/", "/connexion", "/questionnaire", "/soutenir"];
+const PUBLIC_PATHS = ["/", "/connexion", "/questionnaire", "/soutenir", "/verifier-email", "/mot-de-passe-oublie", "/reinitialiser-mot-de-passe", "/confidentialite"];
+
+/** Bandeau tant que l'adresse e-mail n'est pas confirmée (paiements et accompagnement en dépendent). */
+function VerifyBanner() {
+  const { t } = useT();
+  const [state, setState] = useState<"idle" | "sent" | "error">("idle");
+  const [error, setError] = useState("");
+  async function resend() {
+    try {
+      await api("/api/auth/renvoyer-verification", { method: "POST" });
+      setState("sent");
+    } catch (e) {
+      setError((e as Error).message);
+      setState("error");
+    }
+  }
+  return (
+    <div role="status" className="border-b border-gold/40 bg-gold/10 px-4 py-2.5 text-sm text-ink sm:px-8">
+      {t("Confirmez votre adresse e-mail grâce au lien que nous vous avons envoyé : il est nécessaire pour payer un dossier ou demander un accompagnement.")}{" "}
+      {state === "sent" ? <span className="font-semibold text-ok">{t("Nouveau lien envoyé.")}</span>
+        : <button type="button" onClick={resend} className="font-semibold text-brand underline">{t("Renvoyer le lien")}</button>}
+      {state === "error" && <span className="ml-2 text-danger">{error}</span>}
+    </div>
+  );
+}
 
 function PublicShell({ children, loggedIn }: { children: React.ReactNode; loggedIn: boolean }) {
   const [open, setOpen] = useState(false);
@@ -115,7 +139,7 @@ function AppShell({ children, me }: { children: React.ReactNode; me: Me | null }
               <span className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-brand">{t("Demander")} <Icon name="arrow" className="h-3.5 w-3.5" /></span>
             </Link>
           )}
-          <button onClick={() => { setToken(null); router.push("/"); }}
+          <button onClick={async () => { await signOut(); router.push("/"); }}
             className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm text-muted hover:bg-paper hover:text-ink">
             <Icon name="logout" className="h-[18px] w-[18px]" /> {t("Déconnexion")}
           </button>
@@ -139,6 +163,7 @@ function AppShell({ children, me }: { children: React.ReactNode; me: Me | null }
           )}
           </div>
         </header>
+        {me && !me.email_verified && <VerifyBanner />}
         <main className="mx-auto max-w-6xl px-4 pb-20 pt-6 sm:px-8">{children}</main>
         <Footer loggedIn />
       </div>
