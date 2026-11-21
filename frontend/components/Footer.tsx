@@ -6,7 +6,7 @@ import { useT } from "./LangProvider";
 const COLS: { t: string; links: [string, string][] }[] = [
   { t: "Explorer", links: [["/bourses", "Bourses d'études"], ["/bourses?kind=stage", "Stages"], ["/bourses?kind=conference", "Conférences"], ["/questionnaire", "Mon profil en 5 étapes"]] },
   { t: "Mon espace", links: [["/mes-bourses", "Mes bourses"], ["/suivi", "Suivi des candidatures"], ["/cv", "Mon CV"], ["/profil", "Mon profil"]] },
-  { t: "ScholarFit", links: [["/#comment", "Comment ça marche"], ["/accompagnement", "Accompagnement"], ["/#offres", "Tarifs"], ["/#questions", "Questions fréquentes"], ["/soutenir", "Soutenir le site"]] },
+  { t: "ScholarFit", links: [["/#comment", "Comment ça marche"], ["/accompagnement", "Accompagnement"], ["/#offres", "Tarifs"], ["/#questions", "Questions fréquentes"], ["/soutenir", "Soutenir le site"], ["/confidentialite", "Confidentialité"]] },
 ];
 
 /** Pied de page commun au site public et à l'espace connecté. */

@@ -16,7 +16,7 @@ from ..schemas import (
     CoachingDetailOut, CoachingOut, CoachingRequestIn, FeedbackIn, MeetingIn, MeetingOut, MeetingUpdate,
     MessageIn, MessageOut, PaymentIn, StepIn, StepOut, StepUpdate, StudentSummary,
 )
-from ..security import admin_user, current_user
+from ..security import admin_user, current_user, verified_user
 from .applications import app_out
 
 router = APIRouter(prefix="/api/accompagnement", tags=["accompagnement"])
@@ -28,7 +28,7 @@ admin_router = APIRouter(prefix="/api/admin", tags=["administration"])
 def _role(c: Coaching, user: User) -> str | None:
     if c.student_id == user.id:
         return "candidat"
-    if user.advisor is not None and c.advisor_id == user.advisor.id:
+    if user.is_advisor and c.advisor_id == user.advisor.id:  # un conseiller désactivé perd l'accès aux dossiers
         return "conseiller"
     if user.is_admin:
         return "admin"
@@ -127,7 +127,7 @@ def my_coachings(user: User = Depends(current_user), db: Session = Depends(get_d
 
 
 @router.post("", response_model=CoachingOut, status_code=201)
-def request_coaching(body: CoachingRequestIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def request_coaching(body: CoachingRequestIn, user: User = Depends(verified_user), db: Session = Depends(get_db)):
     """Demande d'accompagnement. Un seul accompagnement ouvert à la fois."""
     if not body.share_consent:
         raise HTTPException(422, "Votre accord est nécessaire : le conseiller doit voir votre profil, votre CV et vos candidatures pour vous aider.")
@@ -164,7 +164,7 @@ def request_coaching(body: CoachingRequestIn, user: User = Depends(current_user)
 @router.get("/conseiller", response_model=list[CoachingOut])
 def advisor_coachings(user: User = Depends(current_user), db: Session = Depends(get_db)):
     """Espace conseiller : les candidats suivis, les plus récents d'abord."""
-    if user.advisor is None:
+    if not user.is_advisor:
         raise HTTPException(403, "Réservé aux conseillers")
     cs = db.scalars(select(Coaching).where(Coaching.advisor_id == user.advisor.id).order_by(Coaching.updated_at.desc()))
     return [_out(c, "conseiller") for c in cs]

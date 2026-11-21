@@ -52,8 +52,8 @@ cd backend
 python -m venv .venv
 source .venv/bin/activate            # Windows : .venv\Scripts\activate
 pip install -r requirements-dev.txt
-cp .env.example .env                 # facultatif : ajoute ta clé ANTHROPIC_API_KEY
-python -m app.cli seed               # base SQLite + 98 opportunités (82 bourses, 10 stages, 6 conférences) + comptes de démo
+cp .env.example .env                 # APP_ENV=dev (poste de développement) ; ajoute ta clé ANTHROPIC_API_KEY si besoin
+python -m app.cli seed               # migrations + 98 opportunités (82 bourses, 10 stages, 6 conférences) + comptes de démo
 uvicorn app.main:app --reload --port 8000
 
 # 2. Site (dans un autre terminal)
@@ -70,11 +70,14 @@ npm run dev                          # relaie /api vers http://127.0.0.1:8000
 Le pilote PostgreSQL est dans `backend/requirements-postgres.txt` (installé par le Dockerfile) : l'installation locale avec SQLite n'en a pas besoin.
 
 
+Docker lance la plateforme **comme en production** : l'API refuse de démarrer sans `SECRET_KEY`, aucun compte de démo n'est créé, et l'API n'est pas exposée (le navigateur passe par le site).
+
 ```bash
-docker compose up --build
+SECRET_KEY=$(python -c "import secrets; print(secrets.token_urlsafe(48))") docker compose up --build
+docker compose exec api python -m app.cli create-admin vous@exemple.org   # mot de passe affiché une fois
 ```
 
-Lance PostgreSQL, l'API et le site. Pour activer l'IA : `ANTHROPIC_API_KEY=sk-... docker compose up --build`.
+Les variables (`SECRET_KEY`, `POSTGRES_PASSWORD`, `FRONTEND_URL`, `ADMIN_EMAILS`, `SMTP_*`, `ANTHROPIC_API_KEY`) peuvent aussi aller dans un fichier `.env` à côté de `docker-compose.yml`. Pour essayer avec les comptes de démo : `APP_ENV=dev SECRET_KEY=... docker compose up --build`.
 
 ### Comptes de démo
 
@@ -84,7 +87,34 @@ Lance PostgreSQL, l'API et le site. Pour activer l'IA : `ANTHROPIC_API_KEY=sk-..
 | Administrateur | `admin@example.org` | `admin12345` |
 | Conseiller (accompagnement, français/anglais, France, Canada, Belgique) | `conseiller@example.org` | `conseil12345` |
 
-Change ces mots de passe et `SECRET_KEY` avant toute mise en ligne.
+Ces comptes n'existent **qu'avec `APP_ENV=dev`** (ce que font `start.ps1`, `start.sh` et `.env.example`). En production, aucun compte à mot de passe connu n'est créé : utilisez `python -m app.cli create-admin EMAIL`.
+
+## Sécurité des comptes
+
+| Point | Comment |
+|---|---|
+| Session | Cookie `sf_session` **httpOnly** (illisible par le JavaScript de la page, donc hors de portée d'une faille XSS), `SameSite=Lax`, `Secure` hors développement. Valable 24 h, renouvelé tant que la personne est active, jamais plus de 30 jours après la connexion (`TOKEN_EXPIRE_MINUTES`, `SESSION_MAX_DAYS`). Aucun jeton dans `localStorage` (l'ancien `bm_token` est effacé). |
+| Révocation | Changer ou réinitialiser son mot de passe déconnecte tous les appareils (`token_version` du compte). `POST /api/auth/logout` efface le cookie. |
+| CSRF | Toute requête qui modifie quelque chose doit porter l'en-tête `X-Requested-With` (ajouté par `lib/api.ts`), en plus du cookie `SameSite=Lax`. |
+| Secret | Hors `APP_ENV=dev`, l'API refuse de démarrer si `SECRET_KEY` fait moins de 32 caractères ou reprend un exemple du dépôt. `/docs` n'est servi qu'en développement. |
+| Tentatives | Connexion : 20 essais / 15 min par adresse IP et 5 erreurs / 15 min par compte. Inscription : 5 / 15 min. Mot de passe oublié : 5 / 15 min par IP et 3 e-mails / heure par compte. `email-disponible` : 30 / 15 min. Compteurs en mémoire (un seul processus d'API ; Redis à prévoir au-delà). L'adresse réelle est lue dans `X-Forwarded-For` seulement si la requête vient d'un relais de `TRUSTED_PROXIES`. |
+| Adresse e-mail | Lien de confirmation (48 h) envoyé à l'inscription, bouton « Renvoyer le lien » dans l'espace connecté. Une adresse confirmée est exigée pour déclarer un paiement et demander un accompagnement. Les adresses de `ADMIN_EMAILS` ne deviennent administratrices **qu'après confirmation** (sinon n'importe qui pourrait s'inscrire avec avant son titulaire). |
+| Mot de passe oublié | `/mot-de-passe-oublie` : même réponse que l'adresse ait un compte ou non ; lien valable 1 h, utilisable une fois. Changement de mot de passe depuis le profil. |
+| E-mails | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`. Sans `SMTP_HOST`, en développement, le message (avec son lien) s'affiche dans la fenêtre « API ScholarFit ». |
+| Données personnelles | Acceptation de la politique de confidentialité (`/confidentialite`) enregistrée à l'inscription. Les situations sensibles (réfugié, handicap…) ne sont gardées qu'avec un accord daté, retiré en les décochant. Export complet en JSON depuis le profil (`GET /api/profile/export`), suppression du compte en un clic. |
+| En-têtes | `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy`, HSTS en production (`next.config.mjs`) ; réponses personnelles de l'API en `Cache-Control: private, no-store`. Images Docker sans droits root. |
+
+### Migrations de la base (Alembic)
+
+Le schéma est décrit par les migrations de `backend/migrations/versions/`, appliquées toutes seules au démarrage de l'API et par `python -m app.cli seed`. Une base créée avant Alembic est reprise sans perte (colonnes manquantes ajoutées, puis marquée au niveau actuel). Après une modification de `app/models.py` :
+
+```bash
+cd backend
+alembic revision --autogenerate -m "ce qui change"   # relire le fichier créé dans migrations/versions/
+alembic upgrade head
+```
+
+La CI vérifie que les migrations correspondent aux modèles (`alembic check`).
 
 ## Collecte des bourses, stages et conférences dans le monde entier
 
@@ -196,7 +226,11 @@ backend/                      API FastAPI (Python)
     scrapers/                 collecte polie, extraction, dédoublonnage, connecteurs
     routers/                  routes de l'API
     data/                     sources.json, bourses d'exemple
-    cli.py                    seed, collect, extract, nightly
+    security.py               mots de passe, cookie de session, liens signés (e-mail, mot de passe oublié)
+    ratelimit.py              limitation des tentatives
+    mailer.py                 envoi des e-mails (SMTP, ou console en développement)
+    cli.py                    seed, create-admin, collect, extract, nightly
+  migrations/                 migrations Alembic du schéma
   tests/                      tests (pytest), sans réseau ni clé API
 frontend/                     site Next.js 15 (React, TypeScript, Tailwind)
   app/                        pages : accueil, bourses, profil, mes-bourses, suivi, accompagnement, conseiller, cv, lettre, admin
