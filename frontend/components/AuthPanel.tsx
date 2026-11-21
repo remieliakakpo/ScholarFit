@@ -95,7 +95,7 @@ export default function AuthPanel({ initialMode = "connexion", next, onClose, on
           <Logo onDark className="h-8" />
           <p className="mt-3 font-serif text-3xl font-bold leading-tight">{t("Votre prochain départ")} <span className="italic text-[#ffc979]">{t("commence ici.")}</span></p>
         </div>
-        <StudentsIllustration className="mx-auto -mb-8 mt-4 w-full max-w-[340px]" />
+        <StudentsIllustration className="lite-hide mx-auto -mb-8 mt-4 w-full max-w-[340px]" />
         <ul className="relative mt-2 grid grid-cols-3 gap-2 text-center text-[11px] text-white/70">
           {[{ i: "star", t: t("Score par bourse") }, { i: "file", t: t("CV et lettre") }, { i: "people", t: t("Conseiller dédié") }].map((x) => (
             <li key={x.t} className="flex flex-col items-center gap-1.5"><Icon name={x.i} className="h-4 w-4 text-[#3ee0a8]" />{x.t}</li>

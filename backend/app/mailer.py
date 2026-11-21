@@ -13,7 +13,7 @@ from .config import get_settings
 log = logging.getLogger(__name__)
 
 
-def send_mail(to: str, subject: str, body: str) -> bool:
+def send_mail(to: str, subject: str, body: str, headers: dict[str, str] | None = None) -> bool:
     s = get_settings()
     if not s.smtp_host:
         if s.is_dev:
@@ -25,6 +25,8 @@ def send_mail(to: str, subject: str, body: str) -> bool:
     msg["From"] = s.smtp_from
     msg["To"] = to
     msg["Subject"] = subject
+    for k, v in (headers or {}).items():
+        msg[k] = v
     msg.set_content(body)
     try:
         if s.smtp_port == 465:

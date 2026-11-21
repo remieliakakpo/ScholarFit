@@ -3,7 +3,9 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import RequireAuth from "@/components/RequireAuth";
 import { DeadlineBadge } from "@/components/ScholarshipCard";
-import { Application, Meta, api, getMeta } from "@/lib/api";
+import { API_URL, Application, Meta, api, getMeta } from "@/lib/api";
+import Icon from "@/components/Icon";
+import { warmOffline } from "@/lib/pwa";
 import { useT } from "@/components/LangProvider";
 
 const COLUMNS: { key: string; label: string; statuses: string[]; dot: string }[] = [
@@ -26,7 +28,12 @@ function Board() {
 
   useEffect(() => {
     getMeta().then(setMeta);
-    api<Application[]>("/api/applications").then(setApps).catch((e) => setError(e.message));
+    api<Application[]>("/api/applications")
+      .then((list) => {
+        setApps(list);
+        warmOffline(list.map((a) => `/bourses/${a.scholarship.id}`)); // fiches lisibles sans réseau
+      })
+      .catch((e) => setError(e.message));
   }, []);
 
   async function patch(id: number, body: object) {
@@ -49,6 +56,11 @@ function Board() {
       <div>
         <h1 className="text-[1.65rem] sm:text-3xl">{t("Suivi de mes candidatures")}</h1>
         <p className="mt-1 text-muted">{t("Glissez une carte d'une colonne à l'autre. Vous recevez un rappel à J-30, J-7 et J-1 pour chaque candidature pas encore envoyée.")}</p>
+        {apps.length > 0 && (
+          <a href={`${API_URL}/api/calendrier.ics`} download className="btn-ghost mt-3 inline-flex gap-2 text-sm">
+            <Icon name="calendar" className="h-4 w-4 text-brand" />{t("Mettre mes dates limites dans mon agenda")}
+          </a>
+        )}
       </div>
       {apps.length === 0 && (
         <div className="card p-8 text-center text-muted">

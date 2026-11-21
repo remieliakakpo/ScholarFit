@@ -122,6 +122,7 @@ class User(Base):
     coachings: Mapped[list["Coaching"]] = relationship(back_populates="student", cascade="all, delete-orphan")
     doc_packs: Mapped[list["DocPack"]] = relationship(cascade="all, delete-orphan")
     credit_orders: Mapped[list["CreditOrder"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    saved_searches: Mapped[list["SavedSearch"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
     @property
     def email_verified(self) -> bool:
@@ -244,6 +245,8 @@ class Alert(Base):
     scholarship_id: Mapped[int | None] = mapped_column(ForeignKey("scholarships.id"), nullable=True)
     read: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # Envoi par e-mail (regroupé par personne, app/alerts.py) ; vide = pas encore envoyée
+    emailed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     user: Mapped[User] = relationship(back_populates="alerts")
 
@@ -418,3 +421,75 @@ class CreditOrder(Base):
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     user: Mapped[User] = relationship(back_populates="credit_orders")
+
+
+class ScholarshipReport(Base):
+    """Signalement d'une fiche par un membre : lien mort, date fausse, informations erronées…"""
+
+    __tablename__ = "scholarship_reports"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    scholarship_id: Mapped[int] = mapped_column(ForeignKey("scholarships.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    reason: Mapped[str] = mapped_column(String(30))  # lien_mort | date_fausse | infos_fausses | plus_disponible | autre
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="ouvert", index=True)  # ouvert | corrige | rejete
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolved_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    resolution_note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    scholarship: Mapped[Scholarship] = relationship()
+
+
+class AuditLog(Base):
+    """Journal des actions sensibles : administration (toute modification sous /api/admin) et
+    sécurité des comptes. L'adresse de l'auteur est recopiée : elle reste lisible si le compte
+    est supprimé."""
+
+    __tablename__ = "audit_logs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    actor_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    actor_email: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    action: Mapped[str] = mapped_column(String(120), index=True)
+    target_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    target_id: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    details: Mapped[dict] = mapped_column(JSON, default=dict)
+    ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    status_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+class SavedSearch(Base):
+    """Recherche du catalogue enregistrée par un membre, avec alerte sur les nouvelles fiches."""
+
+    __tablename__ = "saved_searches"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    filters: Mapped[dict] = mapped_column(JSON, default=dict)  # mêmes clés que GET /api/scholarships
+    alerts_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    user: Mapped[User] = relationship(back_populates="saved_searches")
+
+
+class AICost(Base):
+    """Une ligne par appel à l'API Claude : jetons consommés et coût estimé (app/ai/client.py)."""
+
+    __tablename__ = "ai_costs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    day: Mapped[date] = mapped_column(Date, index=True)
+    model: Mapped[str] = mapped_column(String(80))
+    purpose: Mapped[str] = mapped_column(String(40), default="autre")
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cache_read_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cache_write_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    web_searches: Mapped[int] = mapped_column(Integer, default=0)
+    cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

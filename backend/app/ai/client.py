@@ -11,11 +11,23 @@ import logging
 from typing import Any
 
 from ..config import get_settings
+from . import costs
 
 log = logging.getLogger(__name__)
 
 _client = None
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
+
+
+def _caller_purpose() -> str:
+    """Fonction qui appelle l'IA, d'après le module appelant (app.ai.cv → « cv »), pour le suivi des coûts."""
+    import sys
+
+    frame = sys._getframe(1)
+    while frame is not None and frame.f_globals.get("__name__") == __name__:
+        frame = frame.f_back
+    name = frame.f_globals.get("__name__", "autre") if frame is not None else "autre"
+    return name.rsplit(".", 1)[-1][:40]
 
 
 def _get_client():
@@ -30,9 +42,11 @@ def _get_client():
     return _client
 
 
-def _call(system: str, user: str, *, effort: str, max_tokens: int, output_format: dict | None = None):
+def _call(system: str, user: str, *, effort: str, max_tokens: int, output_format: dict | None = None,
+          purpose: str | None = None):
+    purpose = purpose or _caller_purpose()
     client = _get_client()
-    if client is None:
+    if client is None or costs.over_budget():
         return None
     import anthropic
 
@@ -59,23 +73,26 @@ def _call(system: str, user: str, *, effort: str, max_tokens: int, output_format
     except anthropic.APIConnectionError:
         log.warning("Impossible de joindre l'API Claude, repli hors-ligne")
         return None
+    costs.record(getattr(response, "usage", None), getattr(response, "model", None) or kwargs["model"], purpose)
     if response.stop_reason in ("refusal", "max_tokens"):
         log.warning("Réponse Claude inutilisable (stop_reason=%s)", response.stop_reason)
         return None
     return next((b.text for b in response.content if b.type == "text"), None)
 
 
-def ask_text(system: str, user: str, *, effort: str = "medium", max_tokens: int = 8000) -> str | None:
-    return _call(system, user, effort=effort, max_tokens=max_tokens)
+def ask_text(system: str, user: str, *, effort: str = "medium", max_tokens: int = 8000, purpose: str | None = None) -> str | None:
+    return _call(system, user, effort=effort, max_tokens=max_tokens, purpose=purpose)
 
 
-def ask_json(system: str, user: str, schema: dict, *, effort: str = "low", max_tokens: int = 8000) -> dict | None:
+def ask_json(system: str, user: str, schema: dict, *, effort: str = "low", max_tokens: int = 8000,
+             purpose: str | None = None) -> dict | None:
     text = _call(
         system,
         user,
         effort=effort,
         max_tokens=max_tokens,
         output_format={"type": "json_schema", "schema": schema},
+        purpose=purpose or _caller_purpose(),
     )
     if text is None:
         return None
@@ -93,7 +110,7 @@ def ask_web(system: str, user: str, *, max_searches: int = 6, effort: str = "med
     ``ask_json`` et chaque lien est vérifié avant d'être affiché.
     """
     client = _get_client()
-    if client is None:
+    if client is None or costs.over_budget():
         return None
     import anthropic
 
@@ -116,6 +133,7 @@ def ask_web(system: str, user: str, *, max_searches: int = 6, effort: str = "med
         except anthropic.APIConnectionError:
             log.warning("Impossible de joindre l'API Claude")
             return None
+        costs.record(getattr(response, "usage", None), getattr(response, "model", None) or get_settings().claude_model, "recherche_web")
         texts += [b.text for b in response.content if b.type == "text"]
         if response.stop_reason == "pause_turn":
             messages.append({"role": "assistant", "content": response.content})

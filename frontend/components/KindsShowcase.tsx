@@ -36,7 +36,7 @@ export default function KindsShowcase() {
                 <h3 className="mt-2 text-xl sm:text-2xl">{b.title}</h3>
                 <p className="mt-2 text-sm text-muted">{b.text}</p>
               </div>
-              <Art className="hidden w-32 shrink-0 sm:block md:w-40" />
+              <Art className="lite-hide hidden w-32 shrink-0 sm:block md:w-40" />
             </div>
             <ul className="relative mt-6 space-y-2">
               {page === null

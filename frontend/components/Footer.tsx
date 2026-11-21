@@ -2,11 +2,12 @@
 import Link from "next/link";
 import { Logo } from "./Icon";
 import { useT } from "./LangProvider";
+import { LiteLink } from "./AppRuntime";
 
 const COLS: { t: string; links: [string, string][] }[] = [
   { t: "Explorer", links: [["/bourses", "Bourses d'études"], ["/bourses?kind=stage", "Stages"], ["/bourses?kind=conference", "Conférences"], ["/questionnaire", "Mon profil en 5 étapes"]] },
   { t: "Mon espace", links: [["/mes-bourses", "Mes bourses"], ["/suivi", "Suivi des candidatures"], ["/cv", "Mon CV"], ["/profil", "Mon profil"]] },
-  { t: "ScholarFit", links: [["/#comment", "Comment ça marche"], ["/accompagnement", "Accompagnement"], ["/#offres", "Tarifs"], ["/#questions", "Questions fréquentes"], ["/soutenir", "Soutenir le site"], ["/confidentialite", "Confidentialité"]] },
+  { t: "ScholarFit", links: [["/#comment", "Comment ça marche"], ["/accompagnement", "Accompagnement"], ["/tarifs", "Tarifs"], ["/#questions", "Questions fréquentes"], ["/soutenir", "Soutenir le site"], ["/confidentialite", "Confidentialité"]] },
 ];
 
 /** Pied de page commun au site public et à l'espace connecté. */
@@ -32,7 +33,7 @@ export default function Footer({ loggedIn }: { loggedIn: boolean }) {
       <div className="border-t border-line">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-5 text-xs text-muted sm:px-6">
           <span>© {new Date().getFullYear()} ScholarFit. {t("Tous droits réservés.")}</span>
-          <span>{t("Offres mises à jour automatiquement chaque jour.")}</span>
+          <span className="flex flex-wrap items-center gap-x-4 gap-y-1"><LiteLink /><span>{t("Offres mises à jour automatiquement chaque jour.")}</span></span>
         </div>
       </div>
     </footer>

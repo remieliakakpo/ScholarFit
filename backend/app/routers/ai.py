@@ -1,7 +1,7 @@
 """CV, lettres de motivation, compatibilité avec une bourse, dossiers et exports."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
@@ -270,8 +270,10 @@ def admin_orders(status: str | None = None, _: User = Depends(admin_user), db: S
 
 
 @router.patch("/admin/credit-orders/{order_id}")
-def admin_order_status(order_id: int, body: OrderStatus, _: User = Depends(admin_user), db: Session = Depends(get_db)):
+def admin_order_status(order_id: int, body: OrderStatus, request: Request, _: User = Depends(admin_user), db: Session = Depends(get_db)):
     o = db.get(CreditOrder, order_id)
     if not o:
         raise HTTPException(404, t("Commande introuvable", "Order not found"))
+    request.state.audit_details = {"avant": o.status, "apres": body.status, "montant": o.amount, "reference": o.reference,
+                                   "compte": o.user.email if o.user else None}
     return _order_out(credits.set_order_status(o, body.status, db))

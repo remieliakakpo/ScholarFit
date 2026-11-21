@@ -33,7 +33,7 @@ const TITLES: [string, string][] = [
   ["/admin", "Administration"],
 ];
 
-const PUBLIC_PATHS = ["/", "/connexion", "/questionnaire", "/soutenir", "/verifier-email", "/mot-de-passe-oublie", "/reinitialiser-mot-de-passe", "/confidentialite"];
+const PUBLIC_PATHS = ["/", "/connexion", "/questionnaire", "/soutenir", "/verifier-email", "/mot-de-passe-oublie", "/reinitialiser-mot-de-passe", "/confidentialite", "/desabonner", "/hors-ligne", "/tarifs"];
 
 /** Bandeau tant que l'adresse e-mail n'est pas confirmée (paiements et accompagnement en dépendent). */
 function VerifyBanner() {
@@ -68,7 +68,7 @@ function PublicShell({ children, loggedIn }: { children: React.ReactNode; logged
     { href: "/bourses?kind=stage", label: t("Stages") },
     { href: "/questionnaire", label: t("Mon profil en 5 étapes") },
     { href: "/#comment", label: t("Comment ça marche") },
-    { href: "/#offres", label: t("Tarifs") },
+    { href: "/tarifs", label: t("Tarifs") },
   ];
   return (
     <div className="min-h-screen">

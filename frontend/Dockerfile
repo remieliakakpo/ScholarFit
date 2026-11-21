@@ -9,7 +9,9 @@ ARG NEXT_PUBLIC_API_URL=
 # Adresse de l'API vue depuis le conteneur du site. Next.js l'inscrit dans le relais /api au moment
 # de la compilation (next.config.mjs) : elle doit donc être connue ici, pas seulement au lancement.
 ARG API_URL_INTERNAL=http://api:8000
-ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL API_URL_INTERNAL=$API_URL_INTERNAL NEXT_TELEMETRY_DISABLED=1
+# Adresse publique du site (aperçus des liens partagés)
+ARG NEXT_PUBLIC_SITE_URL=http://localhost:3000
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL API_URL_INTERNAL=$API_URL_INTERNAL NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
 FROM node:22-alpine

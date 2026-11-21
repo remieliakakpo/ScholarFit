@@ -19,8 +19,15 @@ Ce dépôt est le **MVP** décrit dans le document de conception du projet. Il t
 | Lettre de motivation | `/lettre/ID` | En-tête complet tiré du profil (nom, adresse, ville, téléphone, e-mail) et du CV. Réponses facultatives : programme visé, pourquoi ce pays, pourquoi ce programme, plan d'études, projet après les études, réalisation marquante. Disposition française (destinataire à droite, « Lomé, le … », objet, formule de politesse) ou anglophone (britannique ou américaine). Contrôle avant affichage : pas de deux-points dans le corps, pas de tiret cadratin, pas de phrase incomplète, pas de crochets, pas de formule stéréotypée (réécriture automatique si besoin). Aperçu modifiable, téléchargement **PDF** et **Word**. |
 | Préparer ma candidature | `/preparer/ID` | **Compatibilité avant de postuler** : conditions d'accès, pièces du dossier, thèmes valorisés par le jury couverts ou non par le CV, score, verdict et améliorations classées par priorité. |
 | Dossiers CV + lettre | `/cv`, `/lettre/ID`, `/admin` | Un dossier = CV adapté + lettre pour une bourse, 3 générations de chaque. **Le premier est offert, les suivants coûtent 2 500 F CFA** (`DOC_PACK_PRICE`). Paiement Flooz, Mixx by Yas, TapTap Send, LemFi ou PI-SPI vers les numéros affichés ; l'étudiant déclare la référence, l'admin valide dans `/admin` et le dossier est crédité. Le diagnostic et les modifications manuelles restent gratuits. |
-| Alertes | `/mes-bourses` + console | Nouvelles bourses correspondant au profil, rappels J-30, J-7 et J-1 pour les candidatures pas encore envoyées. |
-| Administration | `/admin` | Lancer une source de collecte, tester l'extraction d'une URL, valider les bourses « à vérifier », saisie manuelle, maintenance (expirations et alertes). |
+| Alertes par e-mail | `/mes-bourses` + e-mail | Nouvelles bourses correspondant au profil, nouvelles offres des **recherches sauvegardées**, rappels J-30, J-7 et J-1 pour les candidatures pas encore envoyées, messages et rendez-vous d'accompagnement. **Un seul e-mail par personne et par passage** (toutes les `AUTO_COLLECT_HOURS` heures) qui regroupe ses alertes, avec un lien de désabonnement (`/desabonner`, en-tête `List-Unsubscribe`). Pas d'e-mail si l'adresse n'est pas confirmée ou si les alertes sont refusées dans le profil. Sans `SMTP_HOST`, l'e-mail est écrit dans la console de l'API. |
+| Recherches sauvegardées | `/bourses`, `/mes-bourses` | Dans Explorer, « M'alerter des nouvelles offres » enregistre les filtres affichés (20 recherches au plus). Chaque nouvelle fiche qui y répond crée une alerte. Liste, activation des alertes et suppression dans « Mes bourses ». |
+| Signalements | fiche, `/admin` | « Signaler une erreur » sur chaque fiche (lien mort, date fausse, informations erronées, offre disparue, autre), réservé aux comptes, un signalement ouvert par personne et par fiche. Trois signalements « lien mort » de personnes différentes marquent le lien comme cassé. Dans l'administration : liste, « Corrigé » (prévient les personnes qui ont signalé) ou « Rejeter ». |
+| Agenda et partage | fiche, `/suivi` | Date limite d'une fiche en fichier `.ics` (rappels 7 jours et 1 jour avant), toutes les dates limites du suivi en un fichier. Partage sur WhatsApp et partage natif du téléphone. Aperçu du lien soigné (titre, résumé, image générée `opengraph-image`) : définir `NEXT_PUBLIC_SITE_URL`. |
+| Application installable et hors ligne | tout le site | Manifeste (`/manifest.webmanifest`, icônes dans `public/icons/`) et service worker (`public/sw.js`, actif après `npm run build`) : fichiers du site gardés, pages et données de « Mes bourses », du suivi et des fiches suivies lisibles sans réseau, page `/hors-ligne` sinon, bandeau « Hors connexion ». Rien de personnel n'est gardé après la déconnexion. |
+| Mode léger | bouton plume dans l'en-tête | Sans globe animé, illustrations ni animations. Automatique si le téléphone signale une connexion lente (2G, 3G) ou l'économiseur de données, et réglable à la main (choix gardé dans le navigateur). |
+| Administration | `/admin` | Lancer une source de collecte, tester l'extraction d'une URL, valider les bourses « à vérifier », saisie manuelle, maintenance (expirations et alertes), fiches signalées, **coût de l'IA** (par jour et par fonction) et **journal d'audit**. |
+| Journal d'audit | `/admin` | Toute modification réussie sous `/api/admin` est inscrite automatiquement (auteur, action, cible, détails comme le titre d'une fiche supprimée ou le statut d'un paiement, adresse IP), ainsi que les connexions des administrateurs, les changements et réinitialisations de mot de passe et les suppressions de compte. |
+| Supervision | API et site | Suivi des erreurs par Sentry (ou compatible, GlitchTip) si `SENTRY_DSN` est défini, sans donnée personnelle. Les erreurs d'affichage du site (`app/error.tsx`, `app/global-error.tsx`) remontent à l'API (`POST /api/erreurs-site`). Chaque appel à Claude enregistre ses jetons et son coût estimé (`ai_costs`, prix `AI_PRICE_*`) ; `AI_DAILY_BUDGET_USD` coupe l'IA pour la journée au-delà d'un plafond (les règles hors-ligne prennent le relais). |
 
 ### Avec ou sans IA
 
@@ -243,9 +250,17 @@ docker-compose.yml            PostgreSQL + API + site
 ## Tests
 
 ```bash
-cd backend && python -m pytest -q        # 33 tests : API, matching, chat, CV, lettres, admin, accompagnement, monde entier, dates limites, questionnaire, offres, liens, stages et conférences, agrégateurs, IA simulée
+cd backend && python -m pytest -q        # 90 tests, sans réseau ni clé API (dont sécurité, alertes, signalements, audit, agenda, coûts IA)
 cd frontend && npm run typecheck && npm run build
 ```
+
+**Test de bout en bout**, contre une plateforme qui tourne déjà (passe par le site, comme un visiteur : catalogue, aperçu des liens, application installable, inscription, sécurité, profil, suivi, agenda, recherches, signalement, export, mot de passe, administration, suppression du compte de test) :
+
+```bash
+python scripts/e2e_smoke.py --base http://localhost:3000 --admin admin@example.org:admin12345
+```
+
+Pour tester le service worker sans arrêter `npm run dev` : `NEXT_DIST_DIR=.next-prod npm run build` puis `NEXT_DIST_DIR=.next-prod npx next start -p 3200`.
 
 ## Variables d'environnement
 
@@ -256,10 +271,9 @@ Site (`frontend/.env.local`) : `API_URL_INTERNAL` (adresse de l'API pour le serv
 ## Ce qui reste à faire (suite du plan)
 
 - **Paiement en ligne** : brancher un agrégateur Mobile Money (CinetPay, PayDunya, Wave, Orange Money) sur `POST /api/accompagnement`.
-- **Envoi réel des alertes** : brancher un service d'e-mail (Brevo, Resend, SMTP) ou WhatsApp dans `app/alerts.py` et planifier `python -m app.cli nightly`.
+- **Alertes WhatsApp ou Telegram** : un second canal dans `send_alert_emails` (`app/alerts.py`), à côté de l'e-mail.
 - **Connecteurs réels** : vérifier robots.txt et conditions de chaque source, ajuster les sélecteurs, demander des partenariats.
 - **Recherche sémantique** : remplacer la similarité par mots-clés par des embeddings stockés dans PostgreSQL avec pgvector.
-- **Migrations de base** : ajouter Alembic avant la première mise en production (le MVP crée les tables au démarrage).
 - **Stockage des fichiers** : les CV sont stockés en texte dans la base ; pour garder les fichiers d'origine, ajouter un stockage S3 privé et chiffré.
 - **Accompagnement** : envoyer les messages et rappels par e-mail ou WhatsApp, synchroniser les rendez-vous avec un agenda (fichier .ics, Google Agenda), joindre des fichiers aux messages, formules payantes si le modèle économique le prévoit, et un coach IA qui prépare les relectures pour le conseiller.
 - **Base existante** : les nouvelles tables (`advisors`, `coachings`, `coaching_steps`, `coaching_messages`, `coaching_meetings`) sont créées au démarrage ; aucune table existante ne change, donc une base du MVP précédent continue de fonctionner (relance `python -m app.cli seed` pour y ajouter le compte conseiller de démo).

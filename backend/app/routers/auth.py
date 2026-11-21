@@ -5,7 +5,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request,
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .. import ratelimit
+from .. import audit, ratelimit
 from ..config import get_settings
 from ..db import get_db
 from ..i18n import lang, t
@@ -99,6 +99,9 @@ def login(body: LoginIn, request: Request, response: Response, db: Session = Dep
         ratelimit.record(fail_key)
         raise HTTPException(401, t("E-mail ou mot de passe incorrect", "Incorrect e-mail or password"))
     ratelimit.reset(fail_key)
+    if user.is_admin:  # chaque ouverture de session administrateur est tracée
+        audit.record(db, user, "connexion administrateur", target_type="users", target_id=user.id, request=request)
+        db.commit()
     start_session(response, user)
     return user
 
@@ -124,7 +127,10 @@ def verify_email(body: TokenIn, db: Session = Depends(get_db)):
                                    "This link is no longer valid. Sign in, then ask for a new link."))
     if not user.email_verified:
         user.email_verified_at = datetime.now(timezone.utc)
+    was_admin = user.is_admin
     _grant_admin_if_listed(user)
+    if user.is_admin and not was_admin:
+        audit.record(db, user, "droits administrateur accordés (ADMIN_EMAILS)", target_type="users", target_id=user.id)
     db.commit()
     return user
 
@@ -151,7 +157,7 @@ def forgot_password(body: EmailIn, request: Request, background: BackgroundTasks
 
 
 @router.post("/reinitialiser-mot-de-passe", status_code=204)
-def reset_password(body: ResetPasswordIn, response: Response, db: Session = Depends(get_db)):
+def reset_password(body: ResetPasswordIn, request: Request, response: Response, db: Session = Depends(get_db)):
     user = user_from_link(db, body.token, RESET_PASSWORD)
     if user is None:
         raise HTTPException(400, t("Ce lien n'est plus valable (il sert une seule fois, pendant 1 heure). Demandez-en un nouveau.",
@@ -164,13 +170,14 @@ def reset_password(body: ResetPasswordIn, response: Response, db: Session = Depe
     if not user.email_verified:  # le lien reçu par e-mail prouve l'adresse
         user.email_verified_at = datetime.now(timezone.utc)
         _grant_admin_if_listed(user)
+    audit.record(db, user, "mot de passe réinitialisé (lien e-mail)", target_type="users", target_id=user.id, request=request)
     db.commit()
     ratelimit.reset(f"login-fail:{user.email}")
     clear_session_cookie(response)
 
 
 @router.post("/changer-mot-de-passe", response_model=UserOut)
-def change_password(body: ChangePasswordIn, response: Response, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def change_password(body: ChangePasswordIn, request: Request, response: Response, user: User = Depends(current_user), db: Session = Depends(get_db)):
     ratelimit.check(f"change-pw:{user.id}", 5, 15 * MIN)
     if not verify_password(body.current_password, user.password_hash):
         raise HTTPException(400, t("Mot de passe actuel incorrect", "Current password is incorrect"))
@@ -179,6 +186,7 @@ def change_password(body: ChangePasswordIn, response: Response, user: User = Dep
         raise HTTPException(422, problem)
     user.password_hash = hash_password(body.new_password)
     user.token_version = (user.token_version or 0) + 1  # les autres appareils sont déconnectés
+    audit.record(db, user, "mot de passe changé", target_type="users", target_id=user.id, request=request)
     db.commit()
     start_session(response, user)
     return user
@@ -190,8 +198,19 @@ def me(user: User = Depends(current_user)):
 
 
 @router.delete("/me", status_code=204)
-def delete_account(response: Response, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def delete_account(request: Request, response: Response, user: User = Depends(current_user), db: Session = Depends(get_db)):
     """Suppression du compte en un clic : profil, CV, lettres, candidatures, accompagnements et alertes."""
+    from sqlalchemy import update
+
+    from ..models import AuditLog, ScholarshipReport
+
+    # Signalements gardés (utiles à la qualité des fiches) mais détachés du compte ; le journal
+    # d'audit garde l'adresse en clair (sécurité), plus le lien vers le compte supprimé.
+    db.execute(update(ScholarshipReport).where(ScholarshipReport.user_id == user.id).values(user_id=None))
+    db.execute(update(ScholarshipReport).where(ScholarshipReport.resolved_by_id == user.id).values(resolved_by_id=None))
+    db.execute(update(AuditLog).where(AuditLog.actor_id == user.id).values(actor_id=None))
+    audit.record(db, None, "compte supprimé par son titulaire", target_type="users", target_id=user.id, request=request,
+                 details={"email": user.email})
     if user.advisor is not None:  # ses candidats repassent en attente d'un nouveau conseiller
         for c in user.advisor.coachings:
             if c.status == "en_cours":

@@ -14,6 +14,9 @@ const SECURITY_HEADERS = [
 ];
 const nextConfig = {
   output: "standalone",
+  // Dossier de compilation séparé possible (ex. tester une compilation de production pendant que
+  // « npm run dev » tourne) : NEXT_DIST_DIR=.next-prod npm run build
+  distDir: process.env.NEXT_DIST_DIR || ".next",
   poweredByHeader: false,
   async headers() {
     return [{ source: "/:path*", headers: SECURITY_HEADERS }];

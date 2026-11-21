@@ -44,6 +44,21 @@ class Settings(BaseSettings):
     # Collecte : autoriser les adresses internes (localhost, réseau privé). Jamais en production.
     fetch_allow_private: bool = False
 
+    # Supervision : suivi des erreurs par Sentry (ou compatible : GlitchTip…) si une adresse est donnée
+    sentry_dsn: str = ""
+    sentry_traces_sample_rate: float = 0.0
+
+    # Coût de l'IA (dollars US). Tarifs Claude Opus 5.5 par million de jetons ; à adapter si
+    # CLAUDE_MODEL change. Le prix de la recherche web est une estimation : vérifier la grille
+    # tarifaire d'Anthropic.
+    ai_price_input_per_mtok: float = 4.0
+    ai_price_output_per_mtok: float = 20.0
+    ai_price_cache_read_per_mtok: float = 0.20
+    ai_price_cache_write_per_mtok: float = 5.0
+    ai_price_per_web_search: float = 0.01
+    # Plafond de dépense par jour : au-delà, l'IA est coupée jusqu'au lendemain (0 = pas de plafond)
+    ai_daily_budget_usd: float = 0.0
+
     # E-mails (vérification d'adresse, mot de passe oublié). Sans SMTP_HOST, les e-mails sont
     # écrits dans le journal de l'API (pratique en développement, à configurer en production).
     smtp_host: str = ""

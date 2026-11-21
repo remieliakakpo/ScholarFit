@@ -1,7 +1,7 @@
 """Accompagnement des candidatures : côté candidat, côté conseiller et côté administration."""
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -429,7 +429,7 @@ def update_advisor(aid: int, body: AdvisorUpdate, _: User = Depends(admin_user),
 
 
 @admin_router.patch("/accompagnement/{cid}/paiement", response_model=AdminCoachingOut)
-def admin_payment(cid: int, body: PaymentIn, _: User = Depends(admin_user), db: Session = Depends(get_db)):
+def admin_payment(cid: int, body: PaymentIn, request: Request, _: User = Depends(admin_user), db: Session = Depends(get_db)):
     """Le paiement (Mobile Money, Wave, Orange Money, virement…) se fait hors plateforme dans le MVP :
     l'administrateur indique ici qu'il est reçu."""
     if body.payment_status not in PAYMENT_STATUSES:
@@ -437,6 +437,8 @@ def admin_payment(cid: int, body: PaymentIn, _: User = Depends(admin_user), db: 
     c = db.get(Coaching, cid)
     if not c:
         raise HTTPException(404, "Accompagnement introuvable")
+    request.state.audit_details = {"avant": c.payment_status, "apres": body.payment_status, "prix": c.price,
+                                   "candidat": c.student.email}
     c.payment_status = body.payment_status
     db.commit()
     return _out(c, "admin", AdminCoachingOut, student_email=c.student.email)

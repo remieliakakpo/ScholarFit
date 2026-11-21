@@ -49,6 +49,8 @@ export async function signOut() {
     /* hors ligne : le cookie expirera de lui-même */
   }
   setSignedIn(false);
+  const { clearOfflineData } = await import("./pwa");
+  clearOfflineData();
 }
 
 export class ApiError extends Error {

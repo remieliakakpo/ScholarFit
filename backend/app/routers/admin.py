@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -70,9 +70,10 @@ def broken_links(_: User = Depends(admin_user), db: Session = Depends(get_db)):
 
 
 @router.delete("/scholarships/{sid}", status_code=204)
-def delete(sid: int, _: User = Depends(admin_user), db: Session = Depends(get_db)):
+def delete(sid: int, request: Request, _: User = Depends(admin_user), db: Session = Depends(get_db)):
     s = db.get(Scholarship, sid)
     if s:
+        request.state.audit_details = {"titre": s.title, "lien": s.official_url}
         db.delete(s)
         db.commit()
 

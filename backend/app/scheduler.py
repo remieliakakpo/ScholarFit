@@ -34,6 +34,9 @@ def run_cycle() -> dict:
         report["traductions"] = translate_missing(db, limit=100)
         report["alertes"] = run_alerts(db)
         report["rappels"] = run_reminders(db)
+        from .alerts import send_alert_emails
+
+        report["emails"] = send_alert_emails(db)
         return report
     finally:
         db.close()

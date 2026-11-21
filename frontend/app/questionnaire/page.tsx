@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import Icon from "@/components/Icon";
-import Offers from "@/components/Offers";
+import AdvisorBanner from "@/components/AdvisorBanner";
 import ScholarshipCard from "@/components/ScholarshipCard";
 import { Match, Meta, Scholarship, api, getMeta } from "@/lib/api";
 import { useAuth } from "@/lib/useAuth";
@@ -408,8 +408,9 @@ function Results({ result, meta, loggedIn, onRestart }: { result: Result; meta: 
       <section>
         <p className="eyebrow">{t("Et maintenant")}</p>
         <h2 className="mt-2 text-[1.65rem] sm:text-3xl">{t("Postulez seul, ou faites-vous")} <span className="accent">{t("accompagner.")}</span></h2>
-        {result.recommended_offer && <p className="mt-2 text-sm text-muted">{t("D'après vos réponses, la formule")} <span className="font-semibold text-ink">{result.recommended_offer === "premium" ? t("Premium") : t("Standard")}</span> {t("vous conviendrait.")}</p>}
-        <div className="mt-6"><Offers /></div>
+        <div className="mt-6">
+          <AdvisorBanner note={result.recommended_offer ? <>{t("D'après vos réponses, la formule")} <span className="font-semibold">{result.recommended_offer === "premium" ? t("Premium") : t("Standard")}</span> {t("vous conviendrait.")}</> : undefined} />
+        </div>
       </section>
     </div>
   );

@@ -16,6 +16,9 @@ from fastapi.testclient import TestClient  # noqa: E402
 @pytest.fixture(scope="session")
 def client():
     db_file = Path("test_bourses.db")
+    from app.db import engine as _engine
+
+    _engine.dispose()  # des tests unitaires ont pu ouvrir la base (suivi des coûts IA) : on la libère
     if db_file.exists():
         db_file.unlink()
     from app.cli import seed

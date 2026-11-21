@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import AdminCoaching from "@/components/AdminCoaching";
 import AdminCredits from "@/components/docs/AdminCredits";
+import { AdminAICosts, AdminAudit, AdminReports } from "@/components/AdminMonitoring";
 import RequireAuth from "@/components/RequireAuth";
 import { Meta, Scholarship, api, getMeta } from "@/lib/api";
 import { useAuth } from "@/lib/useAuth";
@@ -67,8 +68,11 @@ function Admin() {
       <h1 className="text-3xl">Administration</h1>
       {log && <pre className="card overflow-x-auto whitespace-pre-wrap p-4 text-xs">{log}</pre>}
 
+      <AdminReports />
       <AdminCoaching meta={meta} />
       <AdminCredits />
+      <AdminAICosts />
+      <AdminAudit />
 
       <section className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">

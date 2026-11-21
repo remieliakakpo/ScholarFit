@@ -8,6 +8,7 @@ import Icon from "./Icon";
 import CountUp from "./CountUp";
 import { useT } from "./LangProvider";
 import WorldGlobe from "./WorldGlobe";
+import { useLite } from "./AppRuntime";
 import { countryName } from "@/lib/i18n";
 
 function useCountryStats() {
@@ -20,6 +21,24 @@ function useCountryStats() {
 export function HeroGlobe() {
   const { rows } = useCountryStats();
   const { lang, t } = useT();
+  const lite = useLite();
+  if (lite) {
+    const top = [...(rows ?? [])].sort((a, b) => b.count - a.count).slice(0, 12);
+    return (
+      <div className="card p-5">
+        <p className="text-sm font-semibold">{t("Pays d'études les plus représentés")}</p>
+        <ul className="mt-3 grid grid-cols-2 gap-2 text-sm">
+          {top.map((r) => (
+            <li key={r.code}>
+              <Link href={`/bourses?country=${r.code}&country_exact=true&kind=bourse`} className="flex items-center justify-between gap-2 rounded-lg px-2 py-1 hover:bg-surface">
+                <span className="truncate">{countryName(r.code, lang, r.name)}</span><span className="tabular-nums text-muted">{r.count}</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  }
   return (
     <div className="relative aspect-square w-full">
       <WorldGlobe markers={(rows ?? []).map((r) => ({ code: r.code, name: countryName(r.code, lang, r.name), count: r.count }))} />

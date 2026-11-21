@@ -36,6 +36,8 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM: ${SMTP_FROM:-ScholarFit <no-reply@example.org>}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      AI_DAILY_BUDGET_USD: ${AI_DAILY_BUDGET_USD:-0}
     # Pas de port publié : le navigateur passe par le site (/api relayé par Next.js).
     # Pour regarder l'API depuis la machine : décommenter (adresse locale seulement).
     # ports:
@@ -47,6 +49,8 @@ services:
   web:
     build:
       context: ./frontend
+      args:
+        NEXT_PUBLIC_SITE_URL: ${FRONTEND_URL:-http://localhost:3000}
     environment:
       API_URL_INTERNAL: http://api:8000
     ports:

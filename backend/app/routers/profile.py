@@ -10,7 +10,7 @@ from ..ai.chat import parse_rules
 from ..ai.documents import extract_text, split_sections
 from ..db import get_db
 from ..matching import Criteria, missing_minimum, profile_completeness, rank
-from ..models import AIUsage, Document, Profile, Scholarship, User
+from ..models import AIUsage, Document, Profile, Scholarship, ScholarshipReport, User
 from ..schemas import MatchesOut, ProfileIn, ProfileOut
 from ..security import current_user
 from ..serializers import match_out
@@ -77,6 +77,8 @@ def export_my_data(user: User = Depends(current_user), db: Session = Depends(get
         "alerts": [_row(a) for a in user.alerts],
         "ai_usage": [_row(u) for u in db.scalars(select(AIUsage).where(AIUsage.user_id == user.id))],
         "advisor": _row(user.advisor) if user.advisor else None,
+        "saved_searches": [_row(x) for x in user.saved_searches],
+        "reports": [_row(x) for x in db.scalars(select(ScholarshipReport).where(ScholarshipReport.user_id == user.id))],
     }
     body = json.dumps(data, ensure_ascii=False, indent=2, default=str)
     return Response(body, media_type="application/json", headers={

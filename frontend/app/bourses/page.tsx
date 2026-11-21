@@ -3,6 +3,7 @@ import { Suspense, useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Icon from "@/components/Icon";
 import { REGIONS } from "@/lib/geo";
+import { SaveSearchButton } from "@/components/SavedSearches";
 import ScholarshipCard from "@/components/ScholarshipCard";
 import { Meta, Scholarship, api, getMeta } from "@/lib/api";
 import { useAuth } from "@/lib/useAuth";
@@ -149,6 +150,16 @@ function Bourses() {
           </label>
           {active > 0 && (
             <button className="w-full rounded-full border border-line py-2 text-xs font-semibold text-gold-dark hover:border-gold/50" onClick={() => { setPage(1); setF({ ...EMPTY, kind: f.kind }); }}>{t("Effacer les filtres")}</button>
+          )}
+          {active > 0 && (
+            <SaveSearchButton filters={f} suggestedName={[
+              t(K.label),
+              f.region && REGIONS[f.region] ? t(REGIONS[f.region].label) : null,
+              f.country && meta ? countryName(f.country, lang, meta.countries[f.country]) : null,
+              f.level && meta ? meta.levels[f.level] : null,
+              f.domain && meta ? meta.domains[f.domain] : null,
+              f.q || null,
+            ].filter(Boolean).join(" · ").slice(0, 120)} />
           )}
         </aside>
 

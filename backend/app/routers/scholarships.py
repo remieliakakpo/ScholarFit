@@ -43,27 +43,21 @@ def meta():
     }
 
 
-@router.get("/scholarships", response_model=ScholarshipPage)
-def list_scholarships(
-    q: str | None = None,
-    kind: str | None = Query(None, pattern="^(bourse|stage|conference)$", description="type d'opportunité ; vide = tout"),
-    level: str | None = None,
-    country: str | None = None,
-    country_exact: bool = False,
-    domain: str | None = None,
-    nationality: str | None = None,
-    full_funding: bool | None = None,
-    deadline_after: date | None = None,
-    deadline_before: date | None = None,
-    include_expired: bool = False,
-    region: str | None = Query(None, pattern="^(afrique|europe|amerique|asie|oceanie)$"),
-    deadline_status: str | None = Query(None, description="un ou plusieurs états séparés par des virgules : urgente,bientot,ouverte,inconnue,expiree"),
-    sort: str = Query("deadline", pattern="^(deadline|amount|title|recent|priority)$"),
-    page: int = Query(1, ge=1),
-    per_page: int = Query(20, ge=1, le=100),
-    db: Session = Depends(get_db),
-):
+# Paramètres du catalogue qu'une recherche sauvegardée peut retenir (mêmes noms que GET /api/scholarships)
+FILTER_KEYS = ("q", "kind", "level", "country", "country_exact", "domain", "nationality", "full_funding",
+               "deadline_after", "deadline_before", "include_expired", "region", "deadline_status")
+
+
+def search(db: Session, *, today: date | None = None, q: str | None = None, kind: str | None = None,
+           level: str | None = None, country: str | None = None, country_exact: bool = False, domain: str | None = None,
+           nationality: str | None = None, full_funding: bool | None = None, deadline_after: date | None = None,
+           deadline_before: date | None = None, include_expired: bool = False, region: str | None = None,
+           deadline_status: str | None = None, extra_where=None):
+    """Fiches qui répondent aux filtres du catalogue (sans tri ni pagination) et leur état de date limite."""
+    today = today or date.today()
     stmt = select(Scholarship)
+    if extra_where is not None:
+        stmt = stmt.where(extra_where)
     if kind:
         stmt = stmt.where(Scholarship.kind == kind)
     if q:
@@ -76,7 +70,6 @@ def list_scholarships(
     if deadline_before:
         stmt = stmt.where(Scholarship.deadline <= deadline_before)
 
-    today = date.today()
     items = list(db.scalars(stmt))
     info = {s.id: deadline_info(s, today) for s in items}
     wanted = set(deadline_status.split(",")) if deadline_status else None
@@ -104,6 +97,36 @@ def list_scholarships(
             excluded = expand_nationalities(s.excluded_nationalities) if s.excluded_nationalities else set()
             return (allowed is None or nationality in allowed) and nationality not in (excluded or set())
         items = [s for s in items if ok(s)]
+
+    return items, info
+
+
+@router.get("/scholarships", response_model=ScholarshipPage)
+def list_scholarships(
+    q: str | None = None,
+    kind: str | None = Query(None, pattern="^(bourse|stage|conference)$", description="type d'opportunité ; vide = tout"),
+    level: str | None = None,
+    country: str | None = None,
+    country_exact: bool = False,
+    domain: str | None = None,
+    nationality: str | None = None,
+    full_funding: bool | None = None,
+    deadline_after: date | None = None,
+    deadline_before: date | None = None,
+    include_expired: bool = False,
+    region: str | None = Query(None, pattern="^(afrique|europe|amerique|asie|oceanie)$"),
+    deadline_status: str | None = Query(None, description="un ou plusieurs états séparés par des virgules : urgente,bientot,ouverte,inconnue,expiree"),
+    sort: str = Query("deadline", pattern="^(deadline|amount|title|recent|priority)$"),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    today = date.today()
+    items, info = search(
+        db, today=today, q=q, kind=kind, level=level, country=country, country_exact=country_exact, domain=domain,
+        nationality=nationality, full_funding=full_funding, deadline_after=deadline_after,
+        deadline_before=deadline_before, include_expired=include_expired, region=region, deadline_status=deadline_status,
+    )
 
     keys = {
         "deadline": lambda s: (s.deadline is None, s.deadline or date.max),
