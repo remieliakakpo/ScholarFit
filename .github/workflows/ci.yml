@@ -10,6 +10,9 @@ jobs:
         with: { python-version: "3.13" }
       - run: pip install -r requirements-dev.txt
       - run: python -m pytest -q
+      - name: Migrations à jour avec app/models.py
+        env: { DATABASE_URL: "sqlite:///./ci_migrations.db" }
+        run: python -m alembic upgrade head && python -m alembic check
   frontend:
     runs-on: ubuntu-latest
     defaults: { run: { working-directory: frontend } }

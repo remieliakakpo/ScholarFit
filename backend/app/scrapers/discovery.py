@@ -19,6 +19,8 @@ from datetime import date
 from pathlib import Path
 
 import httpx
+
+from ..netguard import safe_client
 from sqlalchemy.orm import Session
 
 from ..ai.client import ask_json, ask_web
@@ -188,7 +190,7 @@ def run_ai_discovery(db: Session, source: Source, cfg: dict) -> tuple[int, int]:
     if not s.ai_enabled or not s.ai_discovery_enabled:
         raise RuntimeError("découverte IA inactive : ajoute ANTHROPIC_API_KEY dans backend/.env")
     created = updated = 0
-    with httpx.Client(headers={"User-Agent": BROWSER_UA}, timeout=15, follow_redirects=True) as http:
+    with safe_client(headers={"User-Agent": BROWSER_UA}, timeout=15, follow_redirects=True) as http:
         for i in _zone_index(int(cfg.get("zones_per_run", 5))):
             name, scope, *rest = ZONES[i]
             kind = rest[0] if rest else "bourse"
@@ -213,7 +215,11 @@ def run_ai_discovery(db: Session, source: Source, cfg: dict) -> tuple[int, int]:
                 rec["eligible_nationalities"] = rec.get("eligible_nationalities") or ["ALL"]
                 rec["link_status"] = status
                 rec["link_final_url"] = final
-                sch, is_new = upsert(db, rec, source)
+                try:
+                    sch, is_new = upsert(db, rec, source)
+                except ValueError as e:
+                    log.warning("Fiche écartée (%s) : %s", e, url)
+                    continue
                 created += is_new
                 updated += not is_new
             db.commit()

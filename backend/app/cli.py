@@ -1,6 +1,7 @@
 """Commandes d'administration.
 
-    python -m app.cli seed            # crée la base, charge les données d'exemple et deux comptes de démo
+    python -m app.cli seed            # met la base à jour, charge les données d'exemple (+ comptes de démo si APP_ENV=dev)
+    python -m app.cli create-admin EMAIL   # crée ou promeut un administrateur (mot de passe demandé ou tiré au hasard)
     python -m app.cli collect         # lance toutes les sources activées (data/sources.json)
     python -m app.cli collect --source "Données d'exemple"
     python -m app.cli extract URL     # teste l'extraction d'une page (n'enregistre rien)
@@ -11,7 +12,10 @@
 import argparse
 import json
 import logging
-from datetime import date
+import getpass
+import sys
+import secrets
+from datetime import date, datetime, timezone
 
 from sqlalchemy import select
 
@@ -36,13 +40,20 @@ def seed() -> None:
         from .translate import load_seed_translations
 
         print(f"Version anglaise : {load_seed_translations(db)} fiche(s)")
+        if not get_settings().is_dev:
+            # En production, aucun compte à mot de passe connu : python -m app.cli create-admin EMAIL
+            db.commit()
+            return
+        verified = datetime.now(timezone.utc)
         admin_email = get_settings().admin_email_list[0]
         if not db.scalars(select(User).where(User.email == admin_email)).first():
-            db.add(User(email=admin_email, password_hash=hash_password("admin12345"), is_admin=True, profile=Profile()))
+            db.add(User(email=admin_email, password_hash=hash_password("admin12345"), is_admin=True, profile=Profile(),
+                        email_verified_at=verified, terms_accepted_at=verified))
             print(f"Compte admin : {admin_email} / admin12345")
         demo = db.scalars(select(User).where(User.email == "demo@example.org")).first()
         if not demo:
-            demo = User(email="demo@example.org", password_hash=hash_password(DEMO_PASSWORD))
+            demo = User(email="demo@example.org", password_hash=hash_password(DEMO_PASSWORD),
+                        email_verified_at=verified, terms_accepted_at=verified)
             demo.profile = Profile(
                 full_name="Awa Diop", birth_date=date(date.today().year - 22, 4, 12), nationalities=["SN"],
                 residence_country="SN", current_level="BAC3", target_level="BAC5", domain="informatique",
@@ -62,6 +73,7 @@ def seed() -> None:
         if not db.scalars(select(User).where(User.email == "conseiller@example.org")).first():
             db.add(User(
                 email="conseiller@example.org", password_hash=hash_password("conseil12345"), profile=Profile(full_name="Moussa Ndiaye"),
+                email_verified_at=verified, terms_accepted_at=verified,
                 advisor=Advisor(
                     display_name="Moussa Ndiaye",
                     bio="Ancien boursier Eiffel (master en informatique à Paris), j'aide les candidats à choisir leurs bourses et à soigner leur dossier.",
@@ -75,10 +87,45 @@ def seed() -> None:
         db.close()
 
 
+def create_admin(email: str, password: str | None) -> None:
+    from .security import password_problem
+
+    init_db()
+    email = email.strip().lower()
+    shown = None
+    if password is None:
+        typed = getpass.getpass("Mot de passe (vide = tiré au hasard) : ") if sys.stdin.isatty() else ""
+        password = typed or secrets.token_urlsafe(14)
+        shown = None if typed else password
+    problem = password_problem(password, email)
+    if problem:
+        raise SystemExit(problem)
+    db = SessionLocal()
+    try:
+        now = datetime.now(timezone.utc)
+        user = db.scalars(select(User).where(User.email == email)).first()
+        if user is None:
+            user = User(email=email, profile=Profile(), terms_accepted_at=now)
+            db.add(user)
+        user.password_hash = hash_password(password)
+        user.is_admin = True
+        user.email_verified_at = user.email_verified_at or now
+        user.token_version = (user.token_version or 0) + 1
+        db.commit()
+        print(f"Administrateur prêt : {email}")
+        if shown:
+            print(f"Mot de passe (affiché une seule fois, changez-le après connexion) : {shown}")
+    finally:
+        db.close()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="python -m app.cli")
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("seed")
+    ca = sub.add_parser("create-admin", help="crée ou promeut un compte administrateur")
+    ca.add_argument("email")
+    ca.add_argument("--password", help="sinon demandé, ou tiré au hasard et affiché une fois")
     c = sub.add_parser("collect")
     c.add_argument("--source")
     e = sub.add_parser("extract")
@@ -94,6 +141,9 @@ def main() -> None:
 
     if args.cmd == "seed":
         seed()
+        return
+    if args.cmd == "create-admin":
+        create_admin(args.email, args.password)
         return
     init_db()
     db = SessionLocal()

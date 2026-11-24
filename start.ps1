@@ -34,12 +34,19 @@ if (-not (Test-Path $venvPy)) {
   & $python -m venv (Join-Path $backend ".venv")
   if ($LASTEXITCODE -ne 0) { Fail "Impossible de créer backend\.venv." }
 }
-& $venvPy -c "import fastapi, uvicorn, sqlalchemy, pydantic_settings, jwt, httpx, bs4" 2>$null
+& $venvPy -c "import fastapi, uvicorn, sqlalchemy, pydantic_settings, jwt, httpx, bs4, alembic" 2>$null
 if ($LASTEXITCODE -ne 0) {
   Step "Installation des dépendances Python (quelques minutes la première fois)"
   & $venvPy -m pip install --upgrade pip -q
   & $venvPy -m pip install -r (Join-Path $backend "requirements-dev.txt")
   if ($LASTEXITCODE -ne 0) { Fail "L'installation des dépendances Python a échoué (voir les messages ci-dessus)." }
+}
+
+# Poste de développement : comptes de démo, documentation /docs, cookie de session sans « Secure »
+# (le site tourne en HTTP). Sauf si backend\.env fixe déjà APP_ENV.
+$envFile = Join-Path $backend ".env"
+if (-not $env:APP_ENV -and -not ((Test-Path $envFile) -and (Select-String -Path $envFile -Pattern "^\s*APP_ENV\s*=" -Quiet))) {
+  $env:APP_ENV = "dev"
 }
 
 # 3. Base de données : création ou mise à jour (sans doublons) à chaque démarrage

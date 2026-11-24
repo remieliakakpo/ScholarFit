@@ -9,20 +9,41 @@ class ORM(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+def _http_or_none(v: str | None) -> str | None:
+    from .netguard import http_url
+
+    return http_url(v)
+
+
 # ---------- Comptes ----------
 class RegisterIn(BaseModel):
     email: EmailStr
-    password: str = Field(min_length=8)
+    password: str = Field(min_length=8, max_length=200)
+    # Acceptation des conditions et de la politique de confidentialité (case à cocher obligatoire)
+    accept_terms: bool = False
 
 
 class LoginIn(BaseModel):
     email: EmailStr
-    password: str
+    password: str = Field(max_length=200)
 
 
-class TokenOut(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
+class EmailIn(BaseModel):
+    email: EmailStr
+
+
+class TokenIn(BaseModel):
+    token: str = Field(max_length=2000)
+
+
+class ResetPasswordIn(BaseModel):
+    token: str = Field(max_length=2000)
+    password: str = Field(min_length=8, max_length=200)
+
+
+class ChangePasswordIn(BaseModel):
+    current_password: str = Field(max_length=200)
+    new_password: str = Field(min_length=8, max_length=200)
 
 
 class UserOut(ORM):
@@ -30,6 +51,7 @@ class UserOut(ORM):
     email: str
     is_admin: bool
     is_advisor: bool = False
+    email_verified: bool = False
 
 
 # ---------- Bourses ----------
@@ -95,6 +117,11 @@ class ScholarshipBase(BaseModel):
 
 
 class ScholarshipIn(ScholarshipBase):
+    @field_validator("official_url", "apply_url")
+    @classmethod
+    def _links(cls, v: str | None) -> str | None:
+        return _http_or_none(v)
+
     pass
 
 
@@ -134,24 +161,24 @@ class ScholarshipPage(BaseModel):
 
 # ---------- Profil ----------
 class ProfileIn(BaseModel):
-    full_name: str | None = None
+    full_name: str | None = Field(default=None, max_length=200)
     birth_date: date | None = None
     nationalities: list[str] | None = None
     residence_country: str | None = None
-    phone: str | None = None
+    phone: str | None = Field(default=None, max_length=50)
     alerts_opt_in: bool | None = None
     current_level: str | None = None
     target_level: str | None = None
     domain: str | None = None
-    institution: str | None = None
+    institution: str | None = Field(default=None, max_length=200)
     grade_average: float | None = Field(default=None, ge=0, le=20)
-    diplomas: list[str] | None = None
+    diplomas: list[str] | None = Field(default=None, max_length=30)
     wished_countries: list[str] | None = None
     languages: dict[str, str] | None = None
     language_scores: dict[str, float] | None = None
-    experiences: str | None = None
-    engagement: str | None = None
-    project: str | None = None
+    experiences: str | None = Field(default=None, max_length=8000)
+    engagement: str | None = Field(default=None, max_length=5000)
+    project: str | None = Field(default=None, max_length=5000)
     full_funding_only: bool | None = None
     situations: list[str] | None = None
     wished_regions: list[str] | None = None
@@ -221,12 +248,12 @@ class MatchesOut(BaseModel):
 
 # ---------- Chat ----------
 class ChatMessage(BaseModel):
-    role: str  # user | assistant
-    content: str
+    role: str = Field(max_length=20)  # user | assistant
+    content: str = Field(max_length=4000)
 
 
 class ChatIn(BaseModel):
-    messages: list[ChatMessage]
+    messages: list[ChatMessage] = Field(max_length=60)
     criteria: dict = {}
 
 
@@ -367,7 +394,7 @@ class AdvisorPublic(ORM):
 class AdvisorIn(BaseModel):
     email: EmailStr
     display_name: str = Field(min_length=2, max_length=200)
-    bio: str = ""
+    bio: str = Field(default="", max_length=3000)
     levels: list[str] = []
     countries: list[str] = []
     domains: list[str] = []
@@ -396,14 +423,14 @@ class AdvisorAdminOut(AdvisorPublic):
 
 class StepIn(BaseModel):
     title: str = Field(min_length=2, max_length=300)
-    description: str | None = None
+    description: str | None = Field(default=None, max_length=5000)
     due_date: date | None = None
     application_id: int | None = None
 
 
 class StepUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=2, max_length=300)
-    description: str | None = None
+    description: str | None = Field(default=None, max_length=5000)
     due_date: date | None = None
     done: bool | None = None
 
@@ -441,12 +468,22 @@ class MeetingIn(BaseModel):
     link: str | None = Field(default=None, max_length=500)
     topic: str | None = Field(default=None, max_length=300)
 
+    @field_validator("link")
+    @classmethod
+    def _link(cls, v: str | None) -> str | None:
+        return _http_or_none(v)
+
 
 class MeetingUpdate(BaseModel):
     status: str | None = None
     starts_at: datetime | None = None
     link: str | None = Field(default=None, max_length=500)
     summary: str | None = None
+
+    @field_validator("link")
+    @classmethod
+    def _link(cls, v: str | None) -> str | None:
+        return _http_or_none(v)
 
 
 class MeetingOut(ORM):

@@ -5,7 +5,7 @@ import httpx
 
 from app.deadlines import deadline_info
 from app.models import Scholarship
-from tests.conftest import login
+from tests.conftest import register, login
 
 
 def _s(**kw) -> Scholarship:
@@ -79,8 +79,7 @@ def test_questionnaire_anonymous_and_logged(client):
     assert anon["total_matches"] > 3 and len(anon["items"]) == 3
     assert all(i["score"] is None for i in anon["items"]) and anon["profile_saved"] is False
     assert anon["recommended_offer"] == "premium"  # 4 bourses visées
-    r = client.post("/api/auth/register", json={"email": "quiz@example.org", "password": "motdepasse1"})
-    h = {"Authorization": f"Bearer {r.json()['access_token']}"}
+    h = register(client, "quiz@example.org")
     res = client.post("/api/questionnaire", headers=h, json={"answers": answers}).json()
     assert res["profile_saved"] and res["total_matches"] == anon["total_matches"]
     assert all(isinstance(i["score"], int) for i in res["items"])
@@ -163,33 +162,48 @@ def test_ai_discovery_keeps_only_live_links(client, monkeypatch):
 
 
 def test_old_database_gets_new_columns(tmp_path):
-    """Une base créée avec l'ancienne version reçoit les nouvelles colonnes au démarrage."""
+    """Une base créée avant Alembic reçoit les nouvelles colonnes au démarrage, puis est marquée
+    au niveau actuel des migrations ; une base neuve est créée par les migrations."""
     import sqlalchemy as sa
 
     from app import db as dbmod
 
-    path = tmp_path / "ancienne.db"
-    eng = sa.create_engine(f"sqlite:///{path}")
-    with eng.begin() as c:
-        c.execute(sa.text("CREATE TABLE scholarships (id INTEGER PRIMARY KEY, slug VARCHAR(200), title VARCHAR(300))"))
     old = dbmod.engine
-    dbmod.engine = eng
     try:
-        dbmod._add_missing_columns()
+        eng = sa.create_engine(f"sqlite:///{tmp_path / 'ancienne.db'}")
+        with eng.begin() as c:
+            c.execute(sa.text("CREATE TABLE users (id INTEGER PRIMARY KEY, email VARCHAR(320), password_hash VARCHAR(300))"))
+            c.execute(sa.text("CREATE TABLE scholarships (id INTEGER PRIMARY KEY, slug VARCHAR(200), title VARCHAR(300))"))
+            c.execute(sa.text("INSERT INTO users (id, email, password_hash) VALUES (1, 'a@example.org', 'x')"))
+        dbmod.engine = eng
+        dbmod.init_db()
+        insp = sa.inspect(eng)
+        cols = {c["name"] for c in insp.get_columns("scholarships")}
+        assert {"eligibility", "link_status", "deadline_estimated", "apply_via"} <= cols
+        assert {"email_verified_at", "token_version"} <= {c["name"] for c in insp.get_columns("users")}
+        assert insp.has_table("alembic_version") and insp.has_table("coachings")
+        with eng.connect() as c:
+            assert c.execute(sa.text("SELECT email FROM users")).scalar() == "a@example.org"
+        eng.dispose()
+
+        neuve = sa.create_engine(f"sqlite:///{tmp_path / 'neuve.db'}")
+        dbmod.engine = neuve
+        dbmod.init_db()
+        dbmod.init_db()  # deuxième démarrage : rien à faire
+        assert sa.inspect(neuve).has_table("users")
+        neuve.dispose()
     finally:
         dbmod.engine = old
-    cols = {c["name"] for c in sa.inspect(eng).get_columns("scholarships")}
-    assert {"eligibility", "link_status", "deadline_estimated", "apply_via"} <= cols
 
 
 def test_register_rules(client):
-    weak = client.post("/api/auth/register", json={"email": "faible@example.org", "password": "abcdefgh"})
+    weak = client.post("/api/auth/register", json={"email": "faible@example.org", "password": "abcdefgh", "accept_terms": True})
     assert weak.status_code == 422 and "chiffre" in weak.json()["detail"]
     assert client.get("/api/auth/email-disponible", params={"email": "Demo@Example.org "}).json()["available"] is False
-    r = client.post("/api/auth/register", json={"email": " Majuscules@Example.org", "password": "motdepasse1"})
+    r = client.post("/api/auth/register", json={"email": " Majuscules@Example.org", "password": "motdepasse1", "accept_terms": True})
     assert r.status_code == 201
     assert client.post("/api/auth/login", json={"email": "majuscules@example.org", "password": "motdepasse1"}).status_code == 200
-    dup = client.post("/api/auth/register", json={"email": "majuscules@example.org", "password": "motdepasse1"})
+    dup = client.post("/api/auth/register", json={"email": "majuscules@example.org", "password": "motdepasse1", "accept_terms": True})
     assert dup.status_code == 409
 
 

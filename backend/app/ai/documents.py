@@ -14,16 +14,31 @@ import io
 import re
 
 # ------------------------------------------------------------------ import
+MAX_PDF_PAGES = 15
+MAX_DOCX_UNZIPPED = 30 * 1024 * 1024
+
+
 def extract_text(filename: str, data: bytes) -> str:
     name = filename.lower()
     if name.endswith(".pdf"):
         from pypdf import PdfReader
 
         reader = PdfReader(io.BytesIO(data))
-        return "\n".join((page.extract_text() or "") for page in reader.pages).strip()
+        from itertools import islice
+
+        pages = islice(reader.pages, MAX_PDF_PAGES)  # un CV tient en quelques pages
+        return "\n".join((page.extract_text() or "") for page in pages).strip()
     if name.endswith(".docx"):
+        import zipfile
+
         import docx
 
+        try:
+            with zipfile.ZipFile(io.BytesIO(data)) as z:
+                if sum(i.file_size for i in z.infolist()) > MAX_DOCX_UNZIPPED:
+                    raise ValueError("fichier Word anormalement volumineux une fois décompressé")
+        except zipfile.BadZipFile as e:
+            raise ValueError("fichier Word illisible") from e
         d = docx.Document(io.BytesIO(data))
         lines = [p.text for p in d.paragraphs]
         for table in d.tables:  # beaucoup de CV Word sont mis en page dans des tableaux

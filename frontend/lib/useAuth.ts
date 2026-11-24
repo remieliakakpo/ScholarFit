@@ -1,8 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
-import { api, getToken } from "./api";
+import { api, isSignedIn } from "./api";
 
-export type Me = { id: number; email: string; is_admin: boolean; is_advisor: boolean };
+export type Me = { id: number; email: string; is_admin: boolean; is_advisor: boolean; email_verified: boolean };
 
 export function useAuth() {
   const [me, setMe] = useState<Me | null>(null);
@@ -10,7 +10,7 @@ export function useAuth() {
 
   useEffect(() => {
     const load = () => {
-      if (!getToken()) {
+      if (!isSignedIn()) {
         setMe(null);
         setReady(true);
         return;

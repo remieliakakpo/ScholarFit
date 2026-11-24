@@ -5,7 +5,7 @@ import CountryPicker from "@/components/CountryPicker";
 import Icon from "@/components/Icon";
 import RequireAuth from "@/components/RequireAuth";
 import { ScoreRing } from "@/components/ScholarshipCard";
-import { Meta, Profile, api, getMeta, setToken } from "@/lib/api";
+import { API_URL, Meta, Profile, api, getMeta, setSignedIn } from "@/lib/api";
 import { useT } from "@/components/LangProvider";
 
 const STEPS = ["Identité", "Parcours", "Projet et atouts", "Facultatif"];
@@ -81,7 +81,7 @@ function ProfileForm() {
   async function deleteAccount() {
     if (!confirm(t("Supprimer définitivement votre compte, votre profil, vos CV, lettres et candidatures ?"))) return;
     await api("/api/auth/me", { method: "DELETE" });
-    setToken(null);
+    setSignedIn(false);
     window.location.href = "/";
   }
 
@@ -168,6 +168,7 @@ function ProfileForm() {
         {step === 3 && (
           <>
             <p className="text-sm text-muted">{t("Ces informations sont facultatives et ne sont jamais partagées. Elles débloquent des bourses réservées à certains publics.")}</p>
+            <p className="text-xs text-muted">{t("En cochant une situation, vous acceptez qu'elle serve uniquement à trouver les bourses qui vous sont réservées. Tout décocher retire votre accord et efface ces informations.")}</p>
             {Object.entries(SITUATIONS).map(([k, v]) => (
               <label key={k} className="flex items-center gap-2 text-sm">
                 <input type="checkbox" checked={p.situations.includes(k)} onChange={(e) => set("situations", e.target.checked ? [...p.situations, k] : p.situations.filter((x) => x !== k))} />{t(v)}
@@ -209,9 +210,51 @@ function ProfileForm() {
           {p.has_cv && <p className="mt-2 text-xs text-ok">{t("✓ Un CV est enregistré.")} <Link href="/cv" className="underline">{t("L'améliorer")}</Link></p>}
         </div>
 
+        <PasswordCard />
+
+        <div className="card p-5">
+          <p className="flex items-center gap-2 text-sm font-semibold"><Icon name="shield" className="h-4 w-4 text-brand" />{t("Mes données")}</p>
+          <p className="mt-1 text-xs text-muted">{t("Téléchargez tout ce que ScholarFit garde sur vous (profil, CV, lettres, candidatures, accompagnement), dans un fichier JSON.")}</p>
+          <a href={`${API_URL}/api/profile/export`} download className="btn-ghost mt-3 w-full">{t("Télécharger mes données")}</a>
+          <Link href="/confidentialite" className="mt-2 block text-center text-xs text-muted hover:text-brand hover:underline">{t("Politique de confidentialité")}</Link>
+        </div>
+
         <button className="w-full text-center text-xs text-danger hover:underline" onClick={deleteAccount}>{t("Supprimer mon compte et toutes mes données")}</button>
       </aside>
     </div>
+  );
+}
+
+/** Changement de mot de passe : les autres appareils sont déconnectés. */
+function PasswordCard() {
+  const { t } = useT();
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true); setMsg(null); setErr(null);
+    try {
+      await api("/api/auth/changer-mot-de-passe", { method: "POST", body: JSON.stringify({ current_password: current, new_password: next }) });
+      setCurrent(""); setNext("");
+      setMsg(t("Mot de passe changé. Vos autres appareils ont été déconnectés."));
+    } catch (e2) {
+      setErr((e2 as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <form onSubmit={submit} className="card space-y-3 p-5">
+      <p className="flex items-center gap-2 text-sm font-semibold"><Icon name="shield" className="h-4 w-4 text-brand" />{t("Mot de passe")}</p>
+      <div><label className="label" htmlFor="pw-current">{t("Mot de passe actuel")}</label><input id="pw-current" type="password" autoComplete="current-password" required className="input" value={current} onChange={(e) => setCurrent(e.target.value)} /></div>
+      <div><label className="label" htmlFor="pw-new">{t("Nouveau mot de passe")}</label><input id="pw-new" type="password" autoComplete="new-password" required minLength={8} pattern={"(?=.*[A-Za-z])(?=.*\\d).{8,}"} title={t("8 caractères minimum, avec au moins une lettre et un chiffre")} className="input" value={next} onChange={(e) => setNext(e.target.value)} /></div>
+      {err && <p className="text-xs text-danger">{err}</p>}
+      {msg && <p className="text-xs text-ok">{msg}</p>}
+      <button className="btn-ghost w-full" disabled={busy}>{busy ? "…" : t("Changer le mot de passe")}</button>
+    </form>
   );
 }
 
