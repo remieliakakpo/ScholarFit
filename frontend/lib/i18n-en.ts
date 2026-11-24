@@ -851,7 +851,7 @@ const EN: Record<string, string> = {
   "Ville, pays": "City, country",
   "LinkedIn, portfolio": "LinkedIn, portfolio",
   "Le serveur de ScholarFit ne répond pas. Réessayez dans un instant.": "The ScholarFit server is not responding. Please try again in a moment.",
-<<<<<<< HEAD
+
   // Page de candidature (/postuler/ID)
   "Postuler : {title}": "Apply: {title}",
   "Retour à la fiche": "Back to the listing",
@@ -906,7 +906,7 @@ const EN: Record<string, string> = {
   // Aperçu du CV (modèle ATS)
   "Candidature, rentrée et mobilité": "Application, intake and mobility",
   "Poste ou diplôme": "Role or degree",
-=======
+
   "Confidentialité": "Privacy",
   "Politique de confidentialité": "Privacy policy",
   "Mot de passe oublié ?": "Forgot your password?",
@@ -958,7 +958,6 @@ const EN: Record<string, string> = {
   "Pour toute autre demande, écrivez à l'équipe ScholarFit depuis l'adresse de votre compte.": "For any other request, write to the ScholarFit team from your account address.",
   "Sécurité": "Security",
   "Connexion par cookie protégé (illisible par les scripts de la page), mots de passe chiffrés, tentatives de connexion limitées, déconnexion de tous vos appareils quand vous changez de mot de passe.": "Sign-in through a protected cookie (unreadable by page scripts), encrypted passwords, limited sign-in attempts, and sign-out from all your devices when you change your password.",
->>>>>>> 0777590ba804d6254612e4fd4775b72d557ebbcf
 };
 
 export default EN;
