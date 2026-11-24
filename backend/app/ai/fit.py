@@ -196,7 +196,7 @@ PROFIL : projet = {p.project or '-'} ; domaine = {DOMAINS.get(p.domain or '', '-
 CV
 {(p.cv_text or '')[:9000]}"""
     system = ADVICE_SYSTEM_BASE + ("\nRédigez les conseils en anglais." if is_en() else "")
-    data = ask_json(system, user, ADVICE_SCHEMA, effort="medium", max_tokens=3000)
+    data = ask_json(system, user, ADVICE_SCHEMA, effort="medium", max_tokens=3000, cache=True)
     if not data or not data.get("advice"):
         return
     ai_items = [{"priority": 2, "text": writing.complete_sentence(writing.clean_punctuation(a)), "action": "cv"} for a in data["advice"][:5]]

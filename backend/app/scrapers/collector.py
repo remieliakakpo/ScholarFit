@@ -199,12 +199,20 @@ def _crawl_detail_pages(db: Session, source: Source, urls: list[str], fetcher: P
                         aggregator: bool = False, kind: str | None = None) -> tuple[int, int]:
     """``aggregator`` : site qui relaie des offres (Afri-Carrières, Opportunity Desk…). On garde la page vue
     dans ``source_page`` et on remplace le lien par celui du site officiel de l'organisme quand on le trouve."""
-    from .extract import official_link
+    import hashlib
 
-    use_ai = get_settings().ai_enabled
-    created = updated = 0
-    if aggregator:  # annonces déjà lues : inutile de les relire (et de repayer l'extraction)
-        known = set(db.scalars(select(Scholarship.source_page).where(Scholarship.source_page.in_(urls))))
+    from ..models import SeenPage
+    from .extract import extract_prompt, html_to_text, official_link
+
+    s = get_settings()
+    local = s.extract_provider == "ollama"  # premier passage sur une machine à vous : gratuit, immédiat
+    use_ai = s.ai_enabled or local
+    batch = s.ai_enabled and s.ai_use_batch
+    created = updated = queued = 0
+    now = datetime.now(timezone.utc)
+    seen = {p.url: p for p in db.scalars(select(SeenPage).where(SeenPage.url.in_(urls)))}
+    if aggregator:  # annonces déjà lues, fiche gardée ou écartée : une annonce relayée ne change pas
+        known = set(db.scalars(select(Scholarship.source_page).where(Scholarship.source_page.in_(urls)))) | set(seen)
         urls = [u for u in urls if u not in known]
     for url in urls[:limit]:
         try:
@@ -215,30 +223,75 @@ def _crawl_detail_pages(db: Session, source: Source, urls: list[str], fetcher: P
         except Exception as e:  # noqa: BLE001 - une page en erreur ne doit pas arrêter la collecte
             log.warning("Échec %s : %s", url, e)
             continue
-        record = extract(html, url, use_ai=use_ai)
-        if not record or not record.get("title"):
+        title, text = html_to_text(html)
+        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        page = seen.get(url)
+        if page is not None and page.content_hash == digest:  # page inchangée : rien à repayer
+            page.last_seen_at = now
             continue
-        record.setdefault("organization", source.name)
-        if not record.get("organization"):
-            record["organization"] = source.name
-        record["source_text"] = None  # on ne stocke pas le texte entier (droit d'auteur)
-        if aggregator:
-            record["source_page"] = url
-            record["recurring"] = False  # une annonce relayée vaut pour une session
-            if record.get("official_url", url) == url:
-                record["official_url"] = official_link(html, url) or url
-            if record.get("organization") == source.name:
-                record["organization"] = org_from_url(record["official_url"]) or source.name
-        if kind and not record.get("kind"):
-            record["kind"] = kind
-        try:
-            _, is_new = upsert(db, record, source)
-        except ValueError as e:
-            log.warning("Fiche écartée (%s) : %s", e, url)
+        if page is None:
+            page = SeenPage(url=url[:500], content_hash=digest)
+            db.add(page)
+            seen[url] = page
+        page.content_hash, page.last_seen_at = digest, now
+        ctx = {"url": url, "source_id": source.id, "aggregator": aggregator, "kind": kind,
+               "official_link": official_link(html, url) if aggregator else None}
+        if batch and not local:  # premier passage envoyé avec les autres à la fin du passage, moitié prix
+            from ..ai.batch import enqueue
+
+            enqueue(db, "extract", extract_prompt(title, text, url), ctx)
+            page.outcome = "en_attente"
+            queued += 1
             continue
-        created += is_new
-        updated += not is_new
+        if batch and local:  # premier passage local tout de suite ; seule la relecture ciblée part dans le lot
+            from ..ai.batch import queue_review
+            from .extract import ai_record, first_pass, review_reasons
+
+            draft = first_pass(title, text, url)
+            reasons = review_reasons(draft, text) if draft is not None else []
+            if reasons:
+                queue_review(db, extract_prompt(title, text, url), draft, reasons, ctx)
+                page.outcome = "en_attente"
+                queued += 1
+                continue
+            record = ai_record(draft, url) if draft is not None else extract(html, url, use_ai=False)
+        else:
+            record = extract(html, url, use_ai=use_ai)
+        is_new = finish_record(db, source, record, ctx)
+        page.outcome = "ecartee" if is_new is None else "fiche"
+        if is_new is not None:
+            created += is_new
+            updated += not is_new
+    if queued:
+        log.info("%s : %d annonce(s) mise(s) en file pour l'IA (lot)", source.name, queued)
     return created, updated
+
+
+def finish_record(db: Session, source: Source | None, record: dict | None, ctx: dict) -> bool | None:
+    """Enregistre une fiche extraite d'une annonce (appel immédiat ou réponse d'un lot).
+    Renvoie True (nouvelle), False (mise à jour) ou None (écartée)."""
+    if not record or not record.get("title"):
+        return None
+    url = ctx["url"]
+    name = source.name if source is not None else ""
+    if not record.get("organization"):
+        record["organization"] = name or "À compléter"
+    record["source_text"] = None  # on ne stocke pas le texte entier (droit d'auteur)
+    if ctx.get("aggregator"):
+        record["source_page"] = url
+        record["recurring"] = False  # une annonce relayée vaut pour une session
+        if record.get("official_url", url) == url:
+            record["official_url"] = ctx.get("official_link") or url
+        if record.get("organization") == name:
+            record["organization"] = org_from_url(record["official_url"]) or name
+    if ctx.get("kind") and not record.get("kind"):
+        record["kind"] = ctx["kind"]
+    try:
+        _, is_new = upsert(db, record, source)
+    except ValueError as e:
+        log.warning("Fiche écartée (%s) : %s", e, url)
+        return None
+    return is_new
 
 
 def run_rss(db: Session, source: Source, cfg: dict) -> tuple[int, int]:

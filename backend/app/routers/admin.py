@@ -93,9 +93,13 @@ def sources_config(_: User = Depends(admin_user)):
 @router.post("/sources/{name}/run")
 def run(name: str, _: User = Depends(admin_user), db: Session = Depends(get_db)):
     try:
-        return {"status": run_source(db, name)}
+        status = run_source(db, name)
     except ValueError as e:
         raise HTTPException(404, str(e)) from e
+    from ..ai.batch import submit_pending
+
+    sent = submit_pending(db)  # lancé à la main : on n'attend pas le prochain passage pour envoyer le lot
+    return {"status": status, "lot_envoye": sent}
 
 
 class ExtractIn(BaseModel):

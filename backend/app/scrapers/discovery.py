@@ -166,7 +166,8 @@ def _zone_index(n: int) -> list[int]:
     return idx
 
 
-def discover_zone(name: str, scope: str, max_searches: int, kind: str = "bourse") -> list[dict]:
+def search_zone(name: str, scope: str, max_searches: int, kind: str = "bourse") -> str | None:
+    """Recherche web (immédiate : un lot ne peut pas enchaîner les recherches) ; renvoie les notes brutes."""
     today = date.today().isoformat()
     what = {"bourse": "bourses distinctes, de préférence entièrement financées",
             "stage": "stages distincts, de préférence rémunérés",
@@ -177,50 +178,74 @@ def discover_zone(name: str, scope: str, max_searches: int, kind: str = "bourse"
         "ouvertes aux étudiants étrangers ou africains, avec leur page officielle. Privilégie celles qui ne sont pas les plus connues.",
         max_searches=max_searches,
     )
+    return notes or None
+
+
+STRUCTURE_MAX_CHARS = 60000
+
+
+def discover_zone(name: str, scope: str, max_searches: int, kind: str = "bourse") -> list[dict]:
+    notes = search_zone(name, scope, max_searches, kind)
     if not notes:
         return []
-    data = ask_json(STRUCTURE_SYSTEM, notes[:60000], LIST_SCHEMA, effort="low", max_tokens=16000)
+    data = ask_json(STRUCTURE_SYSTEM, notes[:STRUCTURE_MAX_CHARS], LIST_SCHEMA, effort="low", max_tokens=16000)
     return (data or {}).get("scholarships", [])
 
 
 def run_ai_discovery(db: Session, source: Source, cfg: dict) -> tuple[int, int]:
-    from .collector import upsert  # import local : évite une boucle d'import
-
     s = get_settings()
     if not s.ai_enabled or not s.ai_discovery_enabled:
         raise RuntimeError("découverte IA inactive : ajoute ANTHROPIC_API_KEY dans backend/.env")
     created = updated = 0
+    for i in _zone_index(int(cfg.get("zones_per_run", 5))):
+        name, scope, *rest = ZONES[i]
+        kind = rest[0] if rest else "bourse"
+        if s.ai_use_batch:  # recherche maintenant, mise en forme dans le lot (moitié prix)
+            from ..ai.batch import enqueue
+
+            notes = search_zone(name, scope, s.ai_discovery_max_searches, kind)
+            if notes:
+                enqueue(db, "structure", notes[:STRUCTURE_MAX_CHARS], {"zone": name, "kind": kind, "source_id": source.id})
+            continue
+        found = discover_zone(name, scope, s.ai_discovery_max_searches, kind)
+        log.info("Zone %s : %d bourse(s) proposée(s)", name, len(found))
+        c, u = save_found(db, source, found, kind)
+        created += c
+        updated += u
+    return created, updated
+
+
+def save_found(db: Session, source: Source | None, found: list[dict], kind: str) -> tuple[int, int]:
+    """Enregistre les offres trouvées par la recherche web, après test de chaque lien."""
+    from .collector import upsert
+
+    created = updated = 0
     with safe_client(headers={"User-Agent": BROWSER_UA}, timeout=15, follow_redirects=True) as http:
-        for i in _zone_index(int(cfg.get("zones_per_run", 5))):
-            name, scope, *rest = ZONES[i]
-            kind = rest[0] if rest else "bourse"
-            found = discover_zone(name, scope, s.ai_discovery_max_searches, kind)
-            log.info("Zone %s : %d bourse(s) proposée(s)", name, len(found))
-            for rec in found:
-                url = (rec.get("official_url") or "").strip()
-                if not url.startswith("http"):
-                    continue
-                status, final, _code = check_url(url, http)
-                if status == "casse":
-                    log.info("Lien mort ignoré : %s", url)
-                    continue
-                rec["kind"] = rec.get("kind") or kind
-                for k in ("deadline", "event_start", "event_end"):
-                    if rec.get(k):
-                        try:
-                            rec[k] = date.fromisoformat(rec[k])
-                        except ValueError:
-                            rec[k] = None
-                rec["domains"] = rec.get("domains") or ["tous"]
-                rec["eligible_nationalities"] = rec.get("eligible_nationalities") or ["ALL"]
-                rec["link_status"] = status
-                rec["link_final_url"] = final
-                try:
-                    sch, is_new = upsert(db, rec, source)
-                except ValueError as e:
-                    log.warning("Fiche écartée (%s) : %s", e, url)
-                    continue
-                created += is_new
-                updated += not is_new
-            db.commit()
+        for rec in found:
+            url = (rec.get("official_url") or "").strip()
+            if not url.startswith("http"):
+                continue
+            status, final, _code = check_url(url, http)
+            if status == "casse":
+                log.info("Lien mort ignoré : %s", url)
+                continue
+            rec["kind"] = rec.get("kind") or kind
+            for k in ("deadline", "event_start", "event_end"):
+                if rec.get(k):
+                    try:
+                        rec[k] = date.fromisoformat(rec[k])
+                    except ValueError:
+                        rec[k] = None
+            rec["domains"] = rec.get("domains") or ["tous"]
+            rec["eligible_nationalities"] = rec.get("eligible_nationalities") or ["ALL"]
+            rec["link_status"] = status
+            rec["link_final_url"] = final
+            try:
+                sch, is_new = upsert(db, rec, source)
+            except ValueError as e:
+                log.warning("Fiche écartée (%s) : %s", e, url)
+                continue
+            created += is_new
+            updated += not is_new
+        db.commit()
     return created, updated

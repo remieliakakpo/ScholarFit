@@ -127,13 +127,14 @@ export function AdminAudit() {
 
 // ---------------------------------------------------------------- coût de l'IA
 type Costs = {
+  jobs?: Record<string, number>; batch?: boolean;
   ai_enabled: boolean; model: string; daily_budget: number | null; today: number; total: number; average_per_day: number;
   days: { day: string; cost: number; calls: number; input_tokens: number; output_tokens: number; web_searches: number }[];
   by_purpose: { purpose: string; cost: number; calls: number }[];
 };
 
 const usd = (n: number) => `${n.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 4 })} $`;
-const PURPOSES: Record<string, string> = { cv: "CV", letter: "Lettres", chat: "Assistant de recherche", fit: "Compatibilité", discovery: "Découverte de bourses", recherche_web: "Recherche web (découverte)", extract: "Extraction de pages", translate: "Traduction" };
+const PURPOSES: Record<string, string> = { cv: "CV", letter: "Lettres", chat: "Assistant de recherche", fit: "Compatibilité", discovery: "Découverte de bourses", recherche_web: "Recherche web (découverte)", extract: "Extraction (premier passage)", review: "Relecture des fiches douteuses", translate: "Traduction", lot_extract: "Extraction par lot (premier passage)", lot_review: "Relecture par lot", lot_structure: "Mise en forme de la découverte (lot)", lot_translate: "Traduction par lot" };
 
 export function AdminAICosts() {
   const [days, setDays] = useState(30);
@@ -157,6 +158,11 @@ export function AdminAICosts() {
             Aujourd&apos;hui : <strong className="text-ink">{usd(data.today)}</strong>{data.daily_budget ? ` sur un plafond de ${usd(data.daily_budget)} par jour` : " (pas de plafond : AI_DAILY_BUDGET_USD)"}.
             {" "}Sur la période : <strong className="text-ink">{usd(data.total)}</strong>, soit {usd(data.average_per_day)} par jour en moyenne. Montants estimés d&apos;après les tarifs réglés dans la configuration.
           </p>
+          {data.batch && (
+            <p className="text-sm text-muted">
+              Collecte par lots (moitié prix) : {data.jobs?.en_attente ?? 0} en attente, {data.jobs?.envoye ?? 0} envoyé(s), {data.jobs?.fait ?? 0} fait(s), {data.jobs?.echec ?? 0} échoué(s) (repli par règles).
+            </p>
+          )}
           <div className="grid gap-4 lg:grid-cols-2">
             <div className="card overflow-x-auto">
               <table className="w-full text-left text-sm">

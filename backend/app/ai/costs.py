@@ -21,8 +21,18 @@ def _n(obj, name: str) -> int:
     return int(v or 0)
 
 
-def estimate(usage) -> dict:
+def prices(model: str | None) -> tuple[float, float, float, float]:
+    """(entrée, sortie, lecture du cache, écriture du cache) par million de jetons, selon le modèle."""
     s = get_settings()
+    if model and "haiku" in model:
+        return (s.ai_price_small_input_per_mtok, s.ai_price_small_output_per_mtok,
+                s.ai_price_small_cache_read_per_mtok, s.ai_price_small_input_per_mtok * 1.25)
+    return (s.ai_price_input_per_mtok, s.ai_price_output_per_mtok, s.ai_price_cache_read_per_mtok, s.ai_price_cache_write_per_mtok)
+
+
+def estimate(usage, model: str | None = None) -> dict:
+    s = get_settings()
+    p_in, p_out, p_read, p_write = prices(model)
     tokens = {
         "input_tokens": _n(usage, "input_tokens"),
         "output_tokens": _n(usage, "output_tokens"),
@@ -31,20 +41,22 @@ def estimate(usage) -> dict:
         "web_searches": _n(getattr(usage, "server_tool_use", None), "web_search_requests"),
     }
     cost = (
-        tokens["input_tokens"] * s.ai_price_input_per_mtok
-        + tokens["output_tokens"] * s.ai_price_output_per_mtok
-        + tokens["cache_read_tokens"] * s.ai_price_cache_read_per_mtok
-        + tokens["cache_write_tokens"] * s.ai_price_cache_write_per_mtok
+        tokens["input_tokens"] * p_in
+        + tokens["output_tokens"] * p_out
+        + tokens["cache_read_tokens"] * p_read
+        + tokens["cache_write_tokens"] * p_write
     ) / 1_000_000 + tokens["web_searches"] * s.ai_price_per_web_search
     return {**tokens, "cost_usd": round(cost, 6)}
 
 
-def record(usage, model: str, purpose: str) -> None:
+def record(usage, model: str, purpose: str, discount: float = 1.0) -> None:
+    """discount=0.5 pour les lots (Batch API : moitié prix sur tous les jetons)."""
     from ..db import SessionLocal
     from ..models import AICost
 
     try:
-        row = estimate(usage)
+        row = estimate(usage, model)
+        row["cost_usd"] = round(row["cost_usd"] * discount, 6)
         db = SessionLocal()
         try:
             db.add(AICost(day=date.today(), model=model[:80], purpose=purpose[:40], **row))

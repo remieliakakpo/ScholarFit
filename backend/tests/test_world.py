@@ -134,7 +134,7 @@ def test_ai_discovery_keeps_only_live_links(client, monkeypatch):
     from app.scrapers import discovery
     from app.scrapers.collector import sync_sources
 
-    monkeypatch.setattr(discovery, "get_settings", lambda: type("S", (), {"ai_enabled": True, "ai_discovery_enabled": True, "ai_discovery_max_searches": 1})())
+    monkeypatch.setattr(discovery, "get_settings", lambda: type("S", (), {"ai_enabled": True, "ai_discovery_enabled": True, "ai_discovery_max_searches": 1, "ai_use_batch": False})())
     monkeypatch.setattr(discovery, "ask_web", lambda *a, **k: "notes")
     rec = dict(title="Bourse de test Océanie", organization="Fondation X", official_url="https://vivant.example/b", summary="Test.",
                levels=["BAC5"], study_countries=["FJ"], eligible_nationalities=["ALL"], domains=["tous"], languages=["en"],

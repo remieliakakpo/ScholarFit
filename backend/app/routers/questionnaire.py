@@ -201,6 +201,7 @@ def _clean(a: dict) -> dict:
             raise HTTPException(422, t(f"Score invalide pour {k}", f"Invalid score for {k}"))
     out["language_scores"] = scores
     out["situations"] = [x for x in a.get("situations") or [] if x in SITUATION_LABELS]
+    out["gender"] = a.get("gender") if a.get("gender") in ("f", "m") else None
     if a.get("applications_planned") not in (None, ""):
         try:
             out["applications_planned"] = max(1, min(50, int(a["applications_planned"])))

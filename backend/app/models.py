@@ -493,3 +493,45 @@ class AICost(Base):
     web_searches: Mapped[int] = mapped_column(Integer, default=0)
     cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class SeenPage(Base):
+    """Page d'annonce déjà lue par la collecte, avec l'empreinte de son texte : on ne repaie
+    l'IA que si la page a changé. Gardée même quand l'annonce a été écartée (offre d'emploi…)."""
+
+    __tablename__ = "seen_pages"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    url: Mapped[str] = mapped_column(String(500), unique=True, index=True)
+    content_hash: Mapped[str] = mapped_column(String(64))
+    outcome: Mapped[str] = mapped_column(String(20), default="fiche")  # fiche | ecartee | en_attente
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class AIJob(Base):
+    """Travail d'IA sans personne qui attend la réponse (extraction, mise en forme, traduction),
+    envoyé par lots à l'API (Batch API : moitié prix). Voir app/ai/batch.py."""
+
+    __tablename__ = "ai_jobs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(20), index=True)  # extract | structure | translate
+    status: Mapped[str] = mapped_column(String(20), default="en_attente", index=True)  # en_attente | envoye | fait | echec
+    user_text: Mapped[str] = mapped_column(Text)
+    context: Mapped[dict] = mapped_column(JSON, default=dict)  # ce qu'il faut pour traiter la réponse
+    batch_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class AICache(Base):
+    """Réponse de l'IA réutilisée quand exactement la même demande revient (même CV, même bourse…)."""
+
+    __tablename__ = "ai_cache"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    value: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
