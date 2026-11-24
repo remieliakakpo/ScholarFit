@@ -334,3 +334,13 @@ def test_ollama_first_pass(monkeypatch, ai_on):
     monkeypatch.setattr(ex, "ask_json", lambda *a, **k: pytest.fail("pas de Claude pour une fiche sûre"))
     rec = ex.extract(PAGE.format(n=12, body="Bourse sans date."), "https://officiel.example.org/z", use_ai=True)
     assert rec["title"] == "Bourse locale" and seen["url"].endswith("/api/chat") and seen["model"] == ai_on.ollama_model
+
+
+def test_questionnaire_asks_gender_and_opens_women_only_offers(client):
+    """Le sexe (facultatif) est demandé à l'étape 1 ; une femme voit les offres réservées aux femmes."""
+    from app.matching import Criteria
+
+    step1 = client.get("/api/questionnaire").json()["steps"][0]
+    q = next(x for x in step1["questions"] if x["id"] == "gender")
+    assert q["required"] is False and {o["value"] for o in q["options"]} == {"f", "m"}
+    assert "femmes" in Criteria(gender="f").groups() and "femmes" not in Criteria(gender="m").groups()

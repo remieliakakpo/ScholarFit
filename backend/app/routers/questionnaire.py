@@ -68,6 +68,10 @@ def steps() -> list[dict]:
                  "required": False, "options": country_opts},
                 {"id": "birth_date", "label": t("Date de naissance", "Date of birth"), "type": "date", "required": True,
                  "placeholder": t("Beaucoup de bourses fixent un âge maximum", "Many scholarships set a maximum age")},
+                {"id": "gender", "label": t("Vous êtes", "You are"), "type": "select", "required": False,
+                 "options": _opts({"f": t("Une femme", "A woman"), "m": t("Un homme", "A man")}),
+                 "placeholder": t("Facultatif. Certaines bourses et stages sont réservés aux femmes.",
+                                  "Optional. Some scholarships and internships are reserved for women.")},
             ],
         },
         {
