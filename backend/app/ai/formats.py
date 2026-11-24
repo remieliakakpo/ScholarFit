@@ -23,6 +23,11 @@ UK_STYLE = {"GB", "IE", "AU", "NZ", "ZA", "GH", "NG", "KE", "IN", "SG", "MY", "H
 ASIA_DETAILED = {"CN", "JP", "KR", "TW"}
 
 
+# Ordre du modèle ATS retenu par ScholarFit (CV de référence fourni le 2026-11-22) : après le
+# profil, les compétences par catégorie, puis expériences, projets, formation et langues.
+ATS_ORDER = ("skills", "experience", "projects", "education", "engagement", "languages", "interests")
+
+
 @dataclass(frozen=True)
 class CVFormat:
     code: str
@@ -44,9 +49,10 @@ FORMATS: dict[str, CVFormat] = {
     "ats": CVFormat(
         "ats", "CV international (ATS)", "International CV (ATS-friendly)", 2,
         show_nationality=True,
-        order=("education", "experience", "projects", "skills", "languages", "engagement", "interests"),
+        order=ATS_ORDER,
         rules=(
             "Une seule colonne, des titres de section standard, sans tableau, sans image ni pictogramme.",
+            "Structure ATS : nom, titre, coordonnées, objectif de candidature, profil, compétences par catégorie, expériences, projets, formation, langues.",
             "Dates au même format partout, du plus récent au plus ancien.",
             "Mots-clés de la bourse et du domaine repris tels quels dans les expériences et compétences.",
         ),
@@ -54,10 +60,10 @@ FORMATS: dict[str, CVFormat] = {
     "francais": CVFormat(
         "francais", "CV français", "French CV", 1,
         show_nationality=True,
-        order=("education", "experience", "projects", "skills", "languages", "engagement", "interests"),
+        order=ATS_ORDER,
         rules=(
             "Une page pour un parcours étudiant, deux au maximum en doctorat.",
-            "Formation en premier, puis expériences, compétences, langues et engagements.",
+            "Profil personnalisé, compétences par catégorie, expériences, projets, formation puis langues.",
             "Un titre de CV qui annonce le diplôme visé.",
         ),
     ),
@@ -86,7 +92,7 @@ FORMATS: dict[str, CVFormat] = {
     "us_resume": CVFormat(
         "us_resume", "Résumé nord-américain", "US/Canadian résumé", 1,
         summary_title_fr="Résumé", summary_title_en="Summary",
-        order=("education", "experience", "projects", "skills", "languages", "engagement"),
+        order=ATS_ORDER[:-1],
         rules=(
             "Une page, sans photo, sans date de naissance ni nationalité (usage anti-discrimination).",
             "Chaque ligne commence par un verbe d'action et donne un résultat mesurable quand il existe.",
@@ -96,7 +102,7 @@ FORMATS: dict[str, CVFormat] = {
     "uk_cv": CVFormat(
         "uk_cv", "CV britannique", "UK CV", 2,
         summary_title_fr="Profil personnel", summary_title_en="Personal statement",
-        order=("education", "experience", "projects", "skills", "languages", "engagement", "interests"),
+        order=ATS_ORDER,
         rules=(
             "Deux pages au maximum, sans photo ni date de naissance.",
             "Un court profil personnel en tête, centré sur le projet d'études.",

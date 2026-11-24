@@ -64,10 +64,10 @@ def cv_pdf(cv: dict) -> bytes:
 
     accent = HexColor(ACCENT)
     grey = HexColor("#555555")
-    centered = cv.get("format") in ("us_resume", "uk_cv", "ats")
-    base = ParagraphStyle("base", fontName="Carlito", fontSize=10.5, leading=13.6, textColor=HexColor("#1a1a1a"))
+    centered = cv.get("layout") != "dated"  # modèle ATS : en-tête centré
+    base = ParagraphStyle("base", fontName="Carlito", fontSize=10.2, leading=12.9, textColor=HexColor("#1a1a1a"))
     name_st = ParagraphStyle("name", parent=base, fontName="Carlito-bold", fontSize=21, leading=25, alignment=TA_CENTER if centered else TA_LEFT)
-    head_st = ParagraphStyle("headline", parent=base, fontSize=11.5, leading=15, textColor=accent, alignment=TA_CENTER if centered else TA_LEFT)
+    head_st = ParagraphStyle("headline", parent=base, fontName="Carlito-bold", fontSize=11, leading=14.5, textColor=accent, alignment=TA_CENTER if centered else TA_LEFT)
     contact_st = ParagraphStyle("contact", parent=base, fontSize=9.8, textColor=grey, alignment=TA_CENTER if centered else TA_LEFT)
     sec_st = ParagraphStyle("section", parent=base, fontName="Carlito-bold", fontSize=11.5, leading=14, textColor=accent, spaceBefore=9, spaceAfter=1)
     title_st = ParagraphStyle("etitle", parent=base, fontName="Carlito-bold")
@@ -78,17 +78,19 @@ def cv_pdf(cv: dict) -> bytes:
     item_st = ParagraphStyle("item", parent=base, spaceBefore=0.5)
 
     buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=18 * mm, rightMargin=18 * mm, topMargin=16 * mm, bottomMargin=16 * mm,
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=17 * mm, rightMargin=17 * mm, topMargin=13 * mm, bottomMargin=13 * mm,
                             title=f"CV {cv.get('header', {}).get('name', '')}".strip(), author=cv.get("header", {}).get("name", ""))
-    width = A4[0] - 36 * mm
+    width = A4[0] - 34 * mm
     h = cv.get("header", {})
-    story = [Paragraph(_e(h.get("name", "")), name_st)]
+    story = [Paragraph(_e(h.get("name", "").upper() if centered else h.get("name", "")), name_st)]
     if h.get("headline"):
-        story.append(Paragraph(_e(h["headline"]), head_st))
-    contact = [x for x in [h.get("email"), h.get("phone"), h.get("location"), h.get("links")] if x]
+        story.append(Paragraph(_e(h["headline"].upper()), head_st))
+    contact = [x for x in [h.get("location"), h.get("phone"), h.get("email"), h.get("links")] if x]
     if contact:
         story.append(Spacer(1, 2))
         story.append(Paragraph("  |  ".join(_e(x) for x in contact), contact_st))
+    if h.get("objective"):
+        story.append(Paragraph(_e(h["objective"]), contact_st))
     personal = []
     lang = cv.get("language", "fr")
     if h.get("birth_date"):
@@ -99,24 +101,39 @@ def cv_pdf(cv: dict) -> bytes:
         story.append(Paragraph("  |  ".join(_e(x) for x in personal), contact_st))
     story.append(Spacer(1, 5))
 
+    pending: list = []  # titre de rubrique gardé avec son premier contenu (jamais seul en bas de page)
+
     def section(title: str):
-        story.append(Paragraph(_e(title.upper()), sec_st))
-        story.append(HRFlowable(width="100%", thickness=0.6, color=accent, spaceBefore=1, spaceAfter=4))
+        pending[:] = [Paragraph(_e(title.upper()), sec_st), HRFlowable(width="100%", thickness=0.6, color=accent, spaceBefore=1, spaceAfter=4)]
+
+    def add(*flow):
+        if pending:
+            story.append(KeepTogether(pending + list(flow)))
+            pending.clear()
+        else:
+            story.append(KeepTogether(list(flow)) if len(flow) > 1 else flow[0])
 
     if cv.get("summary"):
         section(cv.get("summary_title") or "Profil")
-        story.append(Paragraph(_e(cv["summary"]), base))
+        add(Paragraph(_e(cv["summary"]), base))
 
     dated = cv.get("layout") == "dated"
     for sec in cv.get("sections", []):
         section(sec.get("title", ""))
         if sec.get("kind") == "list":
             for it in sec.get("items", []):
-                story.append(Paragraph(_e(it), item_st))
+                cat, sep, rest = it.partition(" : ") if " : " in it else it.partition(": ")
+                if sep and sec.get("key") == "skills" and len(cat.split()) <= 5:
+                    add(Paragraph(f"<b>{_e(cat)}{_e(sep.rstrip())}</b> {_e(rest)}", item_st))
+                else:
+                    add(Paragraph(_e(it), item_st))
             continue
         for e in sec.get("entries", []):
             block = []
             title = _e(e.get("title", ""))
+            if not dated:
+                extra = " | ".join(_e(x) for x in [e.get("organization"), e.get("location")] if x)
+                title = f"<b>{title}</b>" + (f" | {extra}" if extra and title else extra)
             org = ", ".join(x for x in [e.get("organization"), e.get("location")] if x)
             bullets = [Paragraph(_e(b), bullet_st, bulletText="•") for b in e.get("bullets", [])]
             if dated:
@@ -129,15 +146,14 @@ def cv_pdf(cv: dict) -> bytes:
                                        ("TOPPADDING", (0, 0), (-1, -1), 1), ("BOTTOMPADDING", (0, 0), (-1, -1), 4)]))
                 block.append(t)
             else:
-                t = Table([[Paragraph(title, title_st), Paragraph(_e(e.get("dates", "")), date_st)]], colWidths=[width - 42 * mm, 42 * mm], hAlign="LEFT")
-                t.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-                                       ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0)]))
-                block.append(t)
-                if org:
-                    block.append(Paragraph(_e(org), org_st))
+                if title or e.get("dates"):
+                    t = Table([[Paragraph(title, base), Paragraph(_e(e.get("dates", "")), date_st)]], colWidths=[width - 42 * mm, 42 * mm], hAlign="LEFT")
+                    t.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                                           ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0)]))
+                    block.append(t)
                 block += bullets
                 block.append(Spacer(1, 4))
-            story.append(KeepTogether(block))
+            add(*block)
     if cv.get("signature"):
         story.append(Spacer(1, 18))
         story.append(Paragraph(_e(cv["signature"]), base))
@@ -262,15 +278,17 @@ def cv_docx(cv: dict) -> bytes:
     from docx.shared import Mm, Pt
 
     d = _docx_base("Calibri", 10.5, (16, 18, 16, 18))
-    centered = cv.get("format") in ("us_resume", "uk_cv", "ats")
+    centered = cv.get("layout") != "dated"  # modèle ATS : en-tête centré
     align = WD_ALIGN_PARAGRAPH.CENTER if centered else None
     h = cv.get("header", {})
-    _para(d, h.get("name", ""), bold=True, size=21, align=align)
+    _para(d, h.get("name", "").upper() if centered else h.get("name", ""), bold=True, size=21, align=align)
     if h.get("headline"):
-        _para(d, h["headline"], size=11.5, color=ACCENT, align=align)
-    contact = [x for x in [h.get("email"), h.get("phone"), h.get("location"), h.get("links")] if x]
+        _para(d, h["headline"].upper(), bold=True, size=11, color=ACCENT, align=align)
+    contact = [x for x in [h.get("location"), h.get("phone"), h.get("email"), h.get("links")] if x]
     if contact:
         _para(d, "  |  ".join(contact), size=9.8, color="#555555", align=align, space_before=2)
+    if h.get("objective"):
+        _para(d, h["objective"], size=9.8, color="#555555", align=align)
     lang = cv.get("language", "fr")
     personal = []
     if h.get("birth_date"):
@@ -292,7 +310,14 @@ def cv_docx(cv: dict) -> bytes:
         section(sec.get("title", ""))
         if sec.get("kind") == "list":
             for it in sec.get("items", []):
-                _para(d, it, space_after=1)
+                cat, sep, rest = it.partition(" : ") if " : " in it else it.partition(": ")
+                if sep and sec.get("key") == "skills" and len(cat.split()) <= 5:
+                    p = d.add_paragraph()
+                    p.paragraph_format.space_after = Pt(1)
+                    p.add_run(cat + sep.rstrip()).bold = True
+                    p.add_run(" " + rest)
+                else:
+                    _para(d, it, space_after=1)
             continue
         for e in sec.get("entries", []):
             org = ", ".join(x for x in [e.get("organization"), e.get("location")] if x)
@@ -312,13 +337,15 @@ def cv_docx(cv: dict) -> bytes:
                     bp.paragraph_format.space_after = Pt(0)
                 _para(d, "", space_after=2)
             else:
-                p = d.add_paragraph()
-                p.paragraph_format.tab_stops.add_tab_stop(Mm(174), alignment=2)  # 2 = droite
-                p.add_run(e.get("title", "")).bold = True
-                if e.get("dates"):
-                    p.add_run("\t" + e["dates"])
-                if org:
-                    _para(d, org, italic=True, color="#555555")
+                if e.get("title") or e.get("dates") or org:
+                    p = d.add_paragraph()
+                    p.paragraph_format.tab_stops.add_tab_stop(Mm(174), alignment=2)  # 2 = droite
+                    p.add_run(e.get("title", "")).bold = True
+                    extra = " | ".join(x for x in [e.get("organization"), e.get("location")] if x)
+                    if extra:
+                        p.add_run((" | " if e.get("title") else "") + extra)
+                    if e.get("dates"):
+                        p.add_run("\t" + e["dates"])
                 for b in e.get("bullets", []):
                     bp = d.add_paragraph(b, style="List Bullet")
                     bp.paragraph_format.space_after = Pt(0)

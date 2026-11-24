@@ -6,7 +6,7 @@ import { docApi } from "@/lib/docs";
 type Order = { id: number; amount: number; method: string; reference: string | null; payer_phone: string | null; status: string; status_label: string; created_at: string; email: string | null };
 const METHODS: Record<string, string> = { flooz: "Flooz", mixx: "Mixx by Yas", taptap_send: "TapTap Send", lemfi: "LemFi", pi_spi: "PI-SPI" };
 
-/** Paiements des dossiers CV + lettre à valider. */
+/** Paiements des abonnements CV + lettres à valider. */
 export default function AdminCredits() {
   const { t, lang } = useT();
   const [orders, setOrders] = useState<Order[]>([]);
@@ -23,8 +23,8 @@ export default function AdminCredits() {
     <section className="card p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg">{t("Paiements des dossiers CV et lettre")}</h2>
-          <p className="text-sm text-muted">{t("Vérifiez la réception sur le compte Mobile Money, puis validez : le dossier est ajouté au compte de l'étudiant.")}</p>
+          <h2 className="text-lg">{t("Paiements des abonnements CV et lettres")}</h2>
+          <p className="text-sm text-muted">{t("Vérifiez la réception sur le compte Mobile Money, puis validez : l'abonnement de l'étudiant démarre pour 30 jours, ou est prolongé d'un mois.")}</p>
         </div>
         <select className="input !w-auto" value={filter} onChange={(e) => setFilter(e.target.value)}>
           <option value="en_verification">{t("À vérifier")}</option><option value="paye">{t("Payés")}</option><option value="refuse">{t("Refusés")}</option><option value="">{t("Tous")}</option>

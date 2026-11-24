@@ -9,6 +9,7 @@ import { Match, Meta, Scholarship, api, getMeta } from "@/lib/api";
 import { useAuth } from "@/lib/useAuth";
 import { useT } from "@/components/LangProvider";
 import { Lang, countryName } from "@/lib/i18n";
+import { regionOf } from "@/lib/geo";
 
 /*
   Questionnaire en 5 étapes pour cerner le profil et sortir les bourses qui correspondent.
@@ -16,14 +17,16 @@ import { Lang, countryName } from "@/lib/i18n";
   on utilise la version locale ci-dessous (mêmes identifiants que les champs du profil).
 */
 
-type Opt = { value: string; label: string };
+type Opt = { value: string; label: string; region?: string | null };
 type Question = {
   id: string; label: string; type: string; required?: boolean; placeholder?: string; help?: string;
+  /** Pays : liste réduite aux continents choisis dans la question indiquée (ex. wished_regions). */
+  filter_by?: string;
   options?: Opt[] | string[] | Record<string, string>;
 };
 type Step = { id: string; title: string; subtitle?: string; questions: Question[] };
 type Answers = Record<string, unknown>;
-type Result = { total_matches: number; items: Match[]; recommended_offer?: string | null; profile_saved?: boolean; missing?: string[] };
+type Result = { total_matches: number; destination_total?: number; has_destination?: boolean; items: Match[]; recommended_offer?: string | null; profile_saved?: boolean; missing?: string[] };
 
 const STORE = "sf_questionnaire";
 
@@ -64,8 +67,20 @@ function localSteps(meta: Meta): Step[] {
   ];
 }
 
+/** Continent de chaque pays proposé (donné par l'API, sinon table locale). */
+function regionMap(q: Question): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (Array.isArray(q.options)) for (const o of q.options) if (typeof o !== "string") out[o.value] = o.region ?? regionOf(o.value) ?? "";
+  return out;
+}
+
 function optionsOf(q: Question, meta: Meta | null, lang: Lang): Opt[] {
-  if (q.type === "country" || q.type === "countries") return Object.entries(meta?.countries ?? {}).map(([value, label]) => ({ value, label: countryName(value, lang, label) })).sort((a, b) => a.label.localeCompare(b.label, lang));
+  if (q.type === "country" || q.type === "countries") {
+    const regions = regionMap(q);
+    return Object.entries(meta?.countries ?? {})
+      .map(([value, label]) => ({ value, label: countryName(value, lang, label), region: regions[value] ?? regionOf(value) }))
+      .sort((a, b) => a.label.localeCompare(b.label, lang));
+  }
   const o = q.options;
   if (!o) return [];
   if (Array.isArray(o)) return o.map((x) => (typeof x === "string" ? { value: x, label: x } : x));
@@ -118,9 +133,10 @@ async function fallbackMatch(a: Answers, loggedIn: boolean): Promise<Result> {
   };
 }
 
-function Field({ q, value, onChange, meta }: { q: Question; value: unknown; onChange: (v: unknown) => void; meta: Meta | null }) {
+function Field({ q, value, onChange, meta, answers }: { q: Question; value: unknown; onChange: (v: unknown) => void; meta: Meta | null; answers: Answers }) {
   const { t, lang } = useT();
-  const opts = optionsOf(q, meta, lang);
+  const chosenRegions = q.filter_by ? ((answers[q.filter_by] as string[] | undefined) ?? []) : [];
+  const opts = optionsOf(q, meta, lang).filter((o) => !chosenRegions.length || chosenRegions.includes(o.region ?? ""));
   const id = `q-${q.id}`;
   const label = <label className="label" htmlFor={id}>{q.label}{q.required && <span className="text-gold-dark"> *</span>}</label>;
   const hint = q.help ?? (q.type === "date" ? q.placeholder : undefined);
@@ -179,9 +195,10 @@ function Field({ q, value, onChange, meta }: { q: Question; value: unknown; onCh
             </div>
           )}
           <select id={id} className="input" value="" onChange={(e) => e.target.value && toggle(e.target.value)}>
-            <option value="">{t("Ajouter un pays…")}</option>
+            <option value="">{chosenRegions.length === 1 ? t("Ajouter un pays de ce continent…") : chosenRegions.length > 1 ? t("Ajouter un pays de ces continents…") : t("Ajouter un pays…")}</option>
             {opts.filter((o) => !list.includes(o.value)).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
+          {chosenRegions.length > 0 && <p className="mt-1.5 text-xs text-muted">{t("La liste ne montre que les pays des continents que vous avez choisis.")}</p>}
           {help}
         </div>
       );
@@ -262,6 +279,20 @@ function Questionnaire() {
 
   const steps = useMemo(() => translateSteps(remote ?? (meta ? localSteps(meta) : []), t), [remote, meta, t]);
   const current = steps[step];
+
+  /** Enregistre une réponse. Si des continents sont choisis, les pays précis hors de ces continents sont retirés. */
+  function setAnswer(id: string, v: unknown) {
+    setAnswers((a) => {
+      const next: Answers = { ...a, [id]: v };
+      const regions = Array.isArray(v) ? (v as string[]) : [];
+      for (const q of steps.flatMap((s) => s.questions)) {
+        if (q.filter_by !== id || !regions.length || !Array.isArray(next[q.id])) continue;
+        const map = regionMap(q);
+        next[q.id] = (next[q.id] as string[]).filter((c) => regions.includes(map[c] ?? regionOf(c) ?? ""));
+      }
+      return next;
+    });
+  }
   const missing = current?.questions.filter((q) => q.required && isEmpty(answers[q.id])) ?? [];
 
   async function submit() {
@@ -336,7 +367,7 @@ function Questionnaire() {
             {current.subtitle && <p className="mt-1 text-muted">{current.subtitle}</p>}
             <div className="mt-7 space-y-6">
               {current.questions.map((q) => (
-                <Field key={q.id} q={q} meta={meta} value={answers[q.id]} onChange={(v) => setAnswers((a) => ({ ...a, [q.id]: v }))} />
+                <Field key={q.id} q={q} meta={meta} answers={answers} value={answers[q.id]} onChange={(v) => setAnswer(q.id, v)} />
               ))}
             </div>
           </div>
@@ -363,7 +394,18 @@ function Questionnaire() {
 function Results({ result, meta, loggedIn, onRestart }: { result: Result; meta: Meta | null; loggedIn: boolean; onRestart: () => void }) {
   const { t } = useT();
   const n = result.total_matches;
-  const shown = result.items.slice(0, loggedIn ? 6 : 3);
+  const max = loggedIn ? 6 : 3;
+  // Les bourses des pays ou continents choisis d'abord, puis « Autres bourses disponibles ».
+  const split = Boolean(result.has_destination);
+  const inDest = split ? result.items.filter((m) => m.in_destination) : result.items;
+  const others = split ? result.items.filter((m) => !m.in_destination) : [];
+  const shown = inDest.slice(0, max);
+  const shownOthers = others.slice(0, Math.max(loggedIn ? 4 : 0, max - shown.length));
+  const destTotal = result.destination_total ?? inDest.length;
+  const card = (m: Match) => (
+    <ScholarshipCard key={m.scholarship.id} s={m.scholarship} meta={meta} loggedIn={loggedIn}
+      match={loggedIn && m.score != null ? m : undefined} lockedScore={!loggedIn} />
+  );
   return (
     <div className="mx-auto max-w-5xl space-y-10 py-4 sm:py-8">
       <div className="relative overflow-hidden rounded-3xl bg-night p-6 text-white sm:p-10">
@@ -387,15 +429,36 @@ function Results({ result, meta, loggedIn, onRestart }: { result: Result; meta: 
         </div>
       </div>
 
-      {shown.length > 0 && (
+      {split && (
         <section>
-          <p className="eyebrow">{loggedIn ? t("Les mieux classées") : t("Un aperçu")}</p>
-          <div className="mt-4 grid gap-4 lg:grid-cols-2">
-            {shown.map((m) => (
-              <ScholarshipCard key={m.scholarship.id} s={m.scholarship} meta={meta} loggedIn={loggedIn}
-                match={loggedIn && m.score != null ? m : undefined} lockedScore={!loggedIn} />
-            ))}
-          </div>
+          <p className="eyebrow">{t("Dans votre destination")}</p>
+          <h2 className="mt-2 text-xl sm:text-2xl">
+            {destTotal > 0
+              ? t(destTotal > 1 ? "{n} bourses dans les pays que vous avez choisis" : "{n} bourse dans les pays que vous avez choisis", { n: destTotal })
+              : t("Aucune bourse ouverte pour l'instant dans les pays que vous avez choisis")}
+          </h2>
+          {destTotal === 0 && <p className="mt-1 text-sm text-muted">{t("Nous vous prévenons dès qu'une bourse s'ouvre dans ces pays. En attendant, voici les autres bourses qui correspondent à votre profil.")}</p>}
+          {shown.length > 0 && <div className="mt-4 grid gap-4 lg:grid-cols-2">{shown.map(card)}</div>}
+        </section>
+      )}
+
+      {split && shownOthers.length > 0 && (
+        <section>
+          <p className="eyebrow">{t("Ailleurs dans le monde")}</p>
+          <h2 className="mt-2 text-xl sm:text-2xl">{t("Autres bourses disponibles")}</h2>
+          <p className="mt-1 text-sm text-muted">{t("Elles correspondent à votre profil, dans d'autres pays que ceux que vous avez choisis.")}</p>
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">{shownOthers.map(card)}</div>
+        </section>
+      )}
+
+      {(split ? !loggedIn && n > 3 : shown.length > 0) && (
+        <section>
+          {!split && (
+            <>
+              <p className="eyebrow">{loggedIn ? t("Les mieux classées") : t("Un aperçu")}</p>
+              <div className="mt-4 grid gap-4 lg:grid-cols-2">{shown.map(card)}</div>
+            </>
+          )}
           {!loggedIn && n > 3 && (
             <div className="relative mt-4 overflow-hidden rounded-2xl border border-dashed border-line p-6 text-center">
               <p className="font-semibold"><Icon name="lock" className="mr-1 inline h-4 w-4 text-brand" />{t(n - 3 > 1 ? "{n} autres bourses vous attendent" : "{n} autre bourse vous attend", { n: n - 3 })}</p>

@@ -83,16 +83,29 @@ def test_letter_clean_and_paid_second_pack(client, admin):
     assert r.json()["word_count"] <= 400
     # Relance dans le même dossier : gratuite
     assert client.post("/api/letters", headers=h, json=body).status_code == 200
-    # Dossier pour une autre bourse : payant après le dossier offert
+    # Dossier pour une autre bourse : abonnement mensuel après le dossier offert
     r = client.post("/api/letters", headers=h, json={**body, "scholarship_id": s2["id"]})
-    assert r.status_code == 402
+    assert r.status_code == 402 and r.json()["detail"]["code"] == "abonnement_requis"
     o = client.post("/api/credits/orders", headers=h, json={"method": "flooz", "reference": "TX123"}).json()
     assert o["status"] == "en_verification" and o["amount"] == 2500
     assert client.patch(f"/api/admin/credit-orders/{o['id']}", headers=h, json={"status": "paye"}).status_code == 403
     assert client.patch(f"/api/admin/credit-orders/{o['id']}", headers=admin, json={"status": "paye"}).status_code == 200
     r = client.post("/api/letters", headers=h, json={**body, "scholarship_id": s2["id"]})
     assert r.status_code == 200, r.text
-    assert client.get("/api/credits", headers=h).json()["available"] == 0
+    c = client.get("/api/credits", headers=h).json()
+    assert c["subscription"]["active"] and c["subscription"]["used_this_period"] == 1
+    assert c["available"] == c["subscription"]["monthly_packs"] - 1
+    # Limite mensuelle de l'abonnement (maîtrise du coût de l'IA)
+    from app.config import get_settings
+    st = get_settings()
+    old = st.subscription_monthly_packs
+    st.subscription_monthly_packs = 1
+    try:
+        s3 = _first(client, "chevening")
+        r = client.post("/api/letters", headers=h, json={**body, "scholarship_id": s3["id"]})
+        assert r.status_code == 402 and r.json()["detail"]["code"] == "limite_mensuelle"
+    finally:
+        st.subscription_monthly_packs = old
     pdf = client.post("/api/export/lettre", headers=h, params={"fmt": "pdf"}, json={"data": letter})
     assert pdf.status_code == 200 and pdf.content.startswith(b"%PDF")
 
@@ -159,3 +172,58 @@ def test_ai_paths_are_cleaned(monkeypatch):
     L = lmod.generate_letter(p, s, {}, "fr", 400, "sobre", use_ai=True, email="a@b.c")
     assert len(calls) == 2 and "CORRIGEZ" in calls[1]
     assert L["paragraphs"][0].startswith("J'ai conçu") and L["ai_used"]
+
+
+ATS_CV = """KOFI MENSAH
+ANALYSTE RÉSEAUX | SÉCURITÉ DES SYSTÈMES | SOC
+Accra, Ghana  |  +233 20 000 0000  |  kofi@example.org  |  LinkedIn
+Disponible dès octobre 2026 pour un CDI ou un CDD  |  Mobilité : Afrique et Europe
+PROFIL PROFESSIONNEL
+Titulaire d'un Master en Informatique, j'ai une expérience pratique en sécurité des réseaux. Je
+souhaite contribuer à des missions de supervision au sein d'une entreprise.
+COMPÉTENCES TECHNIQUES
+Sécurité & supervision : Snort, Wireshark, Nmap, OWASP
+ZAP
+Systèmes & réseaux : Windows, Ubuntu, TCP/IP
+EXPÉRIENCES PROFESSIONNELLES
+Stagiaire en cybersécurité | Net Lab | À distance | Inde Fév. 2026 - Mars 2026
+• Analyse de vulnérabilités Web avec Nmap et OWASP ZAP ;
+rédaction de rapports techniques.
+Technicien réseaux | Data Co | Accra, Ghana
+• Configuration de routeurs et points d'accès sans fil.
+FORMATION
+Master en Informatique | Université d'Accra 2024 - 2026
+Licence Réseaux | Université d'Accra /
+École d'ingénieurs
+2021 - 2024
+LANGUES
+Français : courant   |   Anglais : intermédiaire
+Sept. 2023 - Avr. 2024"""
+
+
+def test_cv_follows_ats_model_and_drops_job_mentions():
+    from app.ai.cv import build_cv_rules
+    from app.models import Profile, Scholarship
+
+    p = Profile(full_name="Kofi Mensah", residence_country="GH", city="Accra", target_level="BAC5", domain="informatique",
+                project="Après le master, je compte enseigner la sécurité informatique à Accra.")
+    s = Scholarship(id=1, title="Bourse d'excellence Eiffel", organization="Campus France", summary="Master en France", study_countries=["FR"],
+                    languages=["fr"], eligibility=[], levels=["BAC5"], domains=["tous"], deadline=date(2027, 1, 8))
+    cv = build_cv_rules(ATS_CV, p, s, "kofi@example.org")
+    keys = [sec["key"] for sec in cv["sections"]]
+    assert keys.index("skills") < keys.index("experience") < keys.index("education") < keys.index("languages")
+    h = cv["header"]
+    assert "Sécurité des systèmes" in h["headline"] and h["objective"].startswith("Candidature : Bourse d'excellence Eiffel | Rentrée 2027")
+    exp = next(sec for sec in cv["sections"] if sec["key"] == "experience")["entries"]
+    first = next(e for e in exp if e["organization"] == "Net Lab")
+    assert first["title"] == "Stagiaire en cybersécurité" and first["location"] == "À distance, Inde"
+    assert "rédaction de rapports" in first["bullets"][0]  # ligne coupée par le PDF recollée
+    assert next(e for e in exp if e["organization"] == "Data Co")["dates"] == "Sept. 2023 - Avr. 2024"  # date détachée rendue
+    skills = next(sec for sec in cv["sections"] if sec["key"] == "skills")["items"]
+    assert skills[0].endswith("OWASP ZAP")
+    edu = next(sec for sec in cv["sections"] if sec["key"] == "education")["entries"]
+    assert any(e["organization"] == "Université d'Accra / École d'ingénieurs" and e["dates"] == "2021 - 2024" for e in edu)
+    assert next(sec for sec in cv["sections"] if sec["key"] == "languages")["items"] == ["Français : courant | Anglais : intermédiaire"]
+    text = (cv["summary"] + " " + h["objective"] + " " + h["headline"]).lower()
+    assert "cdi" not in text and "cdd" not in text and "missions" not in text
+    assert "bourse d'excellence eiffel" in text and "en france" in text and "enseigner la sécurité" in text

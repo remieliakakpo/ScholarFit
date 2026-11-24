@@ -19,7 +19,7 @@ const HOW = [
   { t: "Vous faites votre demande", d: "Votre objectif, ce sur quoi vous voulez de l'aide et les bourses visées." },
   { t: "Un expert vous est attribué", d: "Ancien boursier ou conseiller d'orientation, choisi selon votre langue, votre niveau et vos pays." },
   { t: "Un plan daté", d: "Les étapes sont calées à rebours sur vos dates limites, avec un rappel la veille." },
-  { t: "Messages et rendez-vous", d: "Posez vos questions, faites relire votre CV et votre lettre, préparez l'entretien." },
+  { t: "L'expert dépose votre candidature", d: "CV et lettre adaptés, pièces vérifiées, dépôt sur le site officiel avec preuve de dépôt, puis suivi jusqu'au résultat." },
 ];
 
 function RequestForm({ cm, onDone, initialNeeds = [], onCancel, initialOffer = "standard", scholarshipId }: { cm: CoachingMeta; onDone: () => Promise<void>; initialNeeds?: string[]; onCancel?: () => void; initialOffer?: string; scholarshipId?: number }) {
@@ -29,8 +29,8 @@ function RequestForm({ cm, onDone, initialNeeds = [], onCancel, initialOffer = "
   const [offers, setOffers] = useState<Offer[]>(DEFAULT_OFFERS);
   const [offer, setOffer] = useState(initialOffer === "premium" ? "premium" : "standard");
   useEffect(() => { getOffers().then(setOffers); }, []);
-  const maxApps = offer === "premium" ? 5 : 2;
-  useEffect(() => { setIds((l) => l.slice(0, offer === "premium" ? 5 : 2)); }, [offer]);
+  const maxApps = offer === "premium" ? 3 : 1;
+  useEffect(() => { setIds((l) => l.slice(0, offer === "premium" ? 3 : 1)); }, [offer]);
   useEffect(() => {
     if (!scholarshipId) return;
     api<Scholarship>(`/api/scholarships/${scholarshipId}`)
@@ -101,7 +101,7 @@ function RequestForm({ cm, onDone, initialNeeds = [], onCancel, initialOffer = "
         </div>
       </fieldset>
       <fieldset>
-        <legend className="label">{t("Bourses concernées ·")} {offer === "premium" ? t("jusqu'à 5") : t("jusqu'à 2")} {t("avec la formule")} {offer === "premium" ? t("Premium") : t("Standard")}</legend>
+        <legend className="label">{t("Bourses concernées ·")} {offer === "premium" ? t("jusqu'à 3") : t("1 bourse")} {t("avec la formule")} {offer === "premium" ? t("Premium") : t("Standard")}</legend>
         {apps.length === 0 ? (
           <p className="text-sm text-muted">{t("Vous n'avez pas encore de bourse dans votre suivi. Votre conseiller vous aidera à les choisir.")}</p>
         ) : (
@@ -197,7 +197,7 @@ function Page() {
     <div className="space-y-8">
       <div>
         <h1 className="text-[1.65rem] sm:text-3xl">{t("Accompagnement")}</h1>
-        <p className="mt-1 max-w-2xl text-muted">{t("Un expert vous suit de la sélection des bourses jusqu'à l'entretien. Deux formules, ou vous postulez vous-même gratuitement.")}</p>
+        <p className="mt-1 max-w-2xl text-muted">{t("Un expert prépare votre dossier et dépose lui-même votre candidature. Deux formules : Standard pour 1 bourse, Premium pour 3 bourses. Vous pouvez aussi postuler vous-même gratuitement.")}</p>
       </div>
 
       {current ? (
@@ -229,7 +229,7 @@ function Page() {
                 <div className="relative grid gap-8 lg:grid-cols-[1fr_1.2fr] lg:items-center">
                   <div>
                     <p className="eyebrow">{t("Conseiller humain · dès 15 000 F CFA")}</p>
-                    <h2 className="mt-3 text-[1.65rem] leading-tight sm:text-3xl lg:text-4xl">{t("Un expert suit votre dossier")} <span className="accent">{t("jusqu'au bout.")}</span></h2>
+                    <h2 className="mt-3 text-[1.65rem] leading-tight sm:text-3xl lg:text-4xl">{t("Un expert dépose votre candidature")} <span className="accent">{t("jusqu'au bout.")}</span></h2>
                     <p className="mt-3 text-sm text-muted">{t("Un ancien boursier ou un conseiller d'orientation, choisi selon votre langue, votre niveau et vos pays. Vous arrêtez quand vous le souhaitez.")}</p>
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">

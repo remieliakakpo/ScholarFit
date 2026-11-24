@@ -89,10 +89,14 @@ class Settings(BaseSettings):
     offer_standard_price: int = 15000
     offer_premium_price: int = 35000
 
-    # CV et lettres : un dossier (CV adapté + lettre pour une bourse) est offert, les suivants
-    # sont payants. Relances de génération permises dans un même dossier.
+    # CV et lettres : un dossier (CV adapté + lettre pour une bourse) est offert à chaque compte.
+    # Ensuite, abonnement mensuel : SUBSCRIPTION_PRICE F CFA pour SUBSCRIPTION_DAYS jours, qui
+    # permet de préparer jusqu'à SUBSCRIPTION_MONTHLY_PACKS dossiers (limite qui maîtrise le coût de l'IA).
+    # Relances de génération permises dans un même dossier.
     doc_free_packs: int = 1
-    doc_pack_price: int = 2500
+    subscription_price: int = 2500
+    subscription_days: int = 30
+    subscription_monthly_packs: int = 10
     doc_pack_regenerations: int = 3
     # Numéros qui reçoivent les paiements (Flooz = Moov Africa, Mixx by Yas)
     payment_flooz_number: str = "+228 98 64 55 43"
@@ -101,8 +105,8 @@ class Settings(BaseSettings):
 
     # Collecte automatique : toutes les N heures, l'API relance les sources, la découverte par IA,
     # la vérification des liens et les expirations (0 = désactivé, utiliser alors « python -m app.cli nightly »).
-    # Chaque source garde sa propre fréquence (sources.json) : ce réglage dit seulement à quel rythme on regarde.
-    auto_collect_hours: float = 6
+    # Chaque source garde sa propre fréquence (sources.json, une fois par semaine) : ce réglage dit seulement à quel rythme on regarde.
+    auto_collect_hours: float = 24
     # Stages des organisations internationales (API ReliefWeb) : nom d'application approuvé
     reliefweb_appname: str = ""
     # Découverte de nouvelles bourses par l'IA (recherche web Claude), région par région

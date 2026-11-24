@@ -1,6 +1,6 @@
 """Collecte automatique pendant que l'API tourne.
 
-Toutes les AUTO_COLLECT_HOURS heures (24 par défaut) : sources dues (dont la découverte par IA),
+Toutes les AUTO_COLLECT_HOURS heures (24 par défaut) : sources dues (une fois par semaine chacune) (dont la découverte par IA),
 expirations, vérification des liens, version anglaise des nouvelles fiches, alertes et rappels. Mettre AUTO_COLLECT_HOURS=0 pour
 désactiver et planifier plutôt « python -m app.cli nightly » (cron, Planificateur de tâches Windows).
 Avec plusieurs instances de l'API, n'activer la collecte que sur une seule.

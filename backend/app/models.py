@@ -383,7 +383,8 @@ class CoachingMeeting(Base):
 class DocPack(Base):
     """Un « dossier » : un CV adapté et une lettre pour une bourse donnée.
 
-    Le premier dossier est offert, les suivants s'achètent (DOC_PACK_PRICE, 2 500 F CFA par défaut).
+    Le premier dossier est offert ; les suivants sont compris dans l'abonnement mensuel
+    (SUBSCRIPTION_PRICE, 2 500 F CFA par mois, jusqu'à SUBSCRIPTION_MONTHLY_PACKS dossiers par mois).
     Dans un dossier, l'étudiant peut relancer la génération quelques fois (DOC_PACK_REGENERATIONS)
     et modifier les textes librement.
     """
@@ -394,7 +395,7 @@ class DocPack(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     scholarship_id: Mapped[int | None] = mapped_column(ForeignKey("scholarships.id"), nullable=True)
-    source: Mapped[str] = mapped_column(String(20), default="offert")  # offert | achat
+    source: Mapped[str] = mapped_column(String(20), default="offert")  # offert | abonnement | achat (ancien modèle)
     order_id: Mapped[int | None] = mapped_column(ForeignKey("credit_orders.id"), nullable=True)
     cv_runs: Mapped[int] = mapped_column(Integer, default=0)
     letter_runs: Mapped[int] = mapped_column(Integer, default=0)
@@ -404,7 +405,9 @@ class DocPack(Base):
 
 
 class CreditOrder(Base):
-    """Achat d'un dossier supplémentaire, réglé par Mobile Money ou transfert puis validé par un administrateur."""
+    """Paiement d'un mois d'abonnement, réglé par Mobile Money ou transfert puis validé par un administrateur.
+
+    Chaque paiement validé ouvre (ou prolonge) l'abonnement de SUBSCRIPTION_DAYS jours."""
 
     __tablename__ = "credit_orders"
 

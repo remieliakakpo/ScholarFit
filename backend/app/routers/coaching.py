@@ -9,6 +9,7 @@ from .. import coaching as svc
 from .. import offers
 from ..config import get_settings
 from ..db import get_db
+from ..i18n import t
 from ..matching import profile_completeness
 from ..models import Advisor, Coaching, CoachingMeeting, CoachingMessage, CoachingStep, User
 from ..schemas import (
@@ -143,7 +144,9 @@ def request_coaching(body: CoachingRequestIn, user: User = Depends(verified_user
     if offer is None:
         raise HTTPException(422, "Offre inconnue : choisissez standard ou premium (ou postulez seul, sans accompagnement)")
     if offer["max_scholarships"] and len(body.application_ids) > offer["max_scholarships"]:
-        raise HTTPException(422, f"L'offre {offer['name']} couvre jusqu'à {offer['max_scholarships']} bourses : choisissez l'offre Premium ou retirez des candidatures.")
+        n = offer["max_scholarships"]
+        raise HTTPException(422, t(f"L'offre {offer['name']} couvre {n} bourse{'s' if n > 1 else ''}. Choisissez l'offre Premium ou retirez des candidatures.",
+                                   f"The {offer['name']} offer covers {n} scholarship{'s' if n > 1 else ''}. Choose Premium or remove some applications."))
     c = Coaching(student_id=user.id, goal=body.goal.strip(), needs=body.needs, application_ids=body.application_ids,
                  preferred_language=body.preferred_language, availability=body.availability, share_consent=True,
                  offer=offer["code"], price=offer["price"], currency="XOF", payment_status="a_payer")

@@ -6,7 +6,7 @@ import Icon from "./Icon";
 import { useT } from "@/components/LangProvider";
 
 /** Les formules : postuler seul (gratuit) ou avec un accompagnement payant. */
-export default function Offers({ scholarshipId, compact = false }: { scholarshipId?: number; compact?: boolean }) {
+export default function Offers({ scholarshipId, compact = false, only }: { scholarshipId?: number; compact?: boolean; only?: string[] }) {
   const { t } = useT();
   const [offers, setOffers] = useState<Offer[]>(DEFAULT_OFFERS);
   useEffect(() => { getOffers().then(setOffers); }, []);
@@ -17,8 +17,8 @@ export default function Offers({ scholarshipId, compact = false }: { scholarship
     return `/accompagnement?${q}`;
   };
   return (
-    <div className={`grid gap-4 ${compact ? "md:grid-cols-3" : "lg:grid-cols-3"}`}>
-      {offers.map((o) => (
+    <div className={`grid gap-4 ${only && only.length === 2 ? "md:grid-cols-2" : compact ? "md:grid-cols-3" : "lg:grid-cols-3"}`}>
+      {offers.filter((o) => !only || only.includes(o.code)).map((o) => (
         <div key={o.code} className={`relative flex flex-col rounded-2xl border p-6 ${o.recommended ? "border-brand/60 bg-card shadow-[0_24px_60px_-30px_rgba(62,224,168,0.45)]" : "border-line bg-card"}`}>
           {o.recommended && <span className="absolute -top-3 left-6 rounded-full bg-mint px-3 py-0.5 text-[11px] font-bold text-[#04140e]">{t("Le plus choisi")}</span>}
           <p className="text-sm font-semibold text-muted">{t(o.name)}</p>

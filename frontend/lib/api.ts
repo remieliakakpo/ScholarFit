@@ -142,6 +142,7 @@ export type Scholarship = {
 
 export type Match = {
   scholarship: Scholarship;
+  in_destination?: boolean | null;
   score: number | null;
   chance: "faible" | "moyenne" | "bonne" | null;
   reasons: string[];
@@ -315,10 +316,11 @@ export async function getCountryStats(): Promise<CountryStat[]> {
 
 export type Offer = { code: string; name: string; price: number; currency: string; price_label: string; description: string; features: string[]; recommended?: boolean };
 
+/** Formules affichées avant la réponse de /api/offres (même contenu que backend/app/offers.py). */
 export const DEFAULT_OFFERS: Offer[] = [
-  { code: "autonome", name: "Autonome", price: 0, currency: "XOF", price_label: "Gratuit", description: "Vous postulez vous-même avec les outils de la plateforme.", features: ["Matching et score", "Liste des documents et conditions", "CV et lettre assistés", "Rappels de dates limites"] },
-  { code: "standard", name: "Standard", price: 15000, currency: "XOF", price_label: "15 000 F CFA", description: "Un expert vous aide à monter et envoyer votre dossier.", features: ["Tout l'offre Autonome", "Un conseiller attitré", "Relecture du CV et de la lettre", "Vérification du dossier avant envoi"], recommended: true },
-  { code: "premium", name: "Premium", price: 35000, currency: "XOF", price_label: "35 000 F CFA", description: "Suivi complet, de la sélection des bourses à l'entretien.", features: ["Tout l'offre Standard", "Plan daté sur vos dates limites", "Préparation à l'entretien", "Aide visa et installation"] },
+  { code: "autonome", name: "Je postule seul", price: 0, currency: "XOF", price_label: "Gratuit", description: "Vous suivez les étapes de chaque fiche et déposez vous-même votre candidature sur le site officiel.", features: ["Matching et score pour toutes les bourses", "Conditions, pièces à fournir et étapes pour chaque bourse", "Premier dossier CV et lettre offert, puis abonnement à 2 500 F CFA par mois", "Suivi de vos candidatures et rappels avant les dates limites"] },
+  { code: "standard", name: "Accompagnement Standard", price: 15000, currency: "XOF", price_label: "15 000 F CFA", description: "Un expert prépare votre dossier et dépose lui-même votre candidature à une bourse.", features: ["1 bourse choisie avec vous", "CV et lettre de motivation adaptés par l'expert (2 révisions)", "Vérification de toutes les pièces du dossier", "Dépôt de la candidature par l'expert, avec preuve de dépôt", "Suivi jusqu'au résultat"], recommended: true },
+  { code: "premium", name: "Accompagnement Premium", price: 35000, currency: "XOF", price_label: "35 000 F CFA", description: "Un expert prépare et dépose vos candidatures à trois bourses, jusqu'à l'entretien et au visa.", features: ["Tout l'accompagnement Standard, pour 3 bourses", "Révisions illimitées du CV et des lettres", "Rédaction du projet d'études ou de recherche", "Conseils pour les lettres de recommandation", "Entretien blanc en visio", "Aide au visa si vous êtes retenu"] },
 ];
 
 export async function getOffers(): Promise<Offer[]> {

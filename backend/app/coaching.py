@@ -85,14 +85,14 @@ def default_plan(coaching: Coaching, today: date | None = None) -> list[Coaching
         ("Compléter votre profil", "Un profil complet donne de meilleurs résultats de matching et aide votre conseiller.", today + timedelta(days=10)),
     ]
     if not apps or "choix_bourses" in needs:
-        plan.append(("Choisir 3 à 5 bourses visées", "Les ajouter au suivi des candidatures depuis « Mes bourses ».", at(45, 14)))
+        plan.append(("Choisir les bourses avec votre expert", "Une bourse en Standard, trois en Premium, à ajouter au suivi depuis « Mes bourses ».", at(45, 14)))
     if "langue" in needs:
         plan.append(("Passer ou planifier le test de langue", "Vérifier le score exigé et les dates de session.", at(40, 14)))
     plan.append(("Faire relire votre CV", "Partager la version améliorée avec votre conseiller.", at(30, 14)))
     if "recommandations" in needs or any("recommandation" in (a.scholarship.requirements or []) for a in apps):
         plan.append(("Demander les lettres de recommandation", "Prévenir vos professeurs au moins 3 semaines avant la date limite.", at(28, 14)))
     plan.append(("Faire relire votre lettre de motivation", "Une lettre par bourse, adaptée à son programme.", at(21, 18)))
-    plan.append(("Vérifier le dossier complet et l'envoyer", "Utiliser « Vérifier le dossier » dans le suivi, puis envoyer avant la date limite.", at(3, 21)))
+    plan.append(("Vérification finale et dépôt par votre expert", "Votre expert vérifie toutes les pièces, dépose la candidature avant la date limite et vous transmet la preuve de dépôt.", at(3, 21)))
     if "entretien" in needs:
         plan.append(("Préparer l'entretien", "Simulation avec votre conseiller : présentation, projet, questions fréquentes.", at(-14, 28)))
     if "visa" in needs:

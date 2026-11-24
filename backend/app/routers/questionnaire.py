@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from .. import i18n, offers
 from ..db import get_db
-from ..geo import REGIONS
+from ..geo import REGIONS, region_of
 from ..i18n import t
 from ..matching import SITUATION_LABELS, Criteria, age_on, missing_minimum, rank, situation_labels
 from ..models import Profile, Scholarship, User
@@ -53,6 +53,8 @@ def steps() -> list[dict]:
     names = i18n.countries(COUNTRIES)
     countries = sorted(names.items(), key=lambda kv: kv[1])
     country_opts = [{"value": c, "label": n} for c, n in countries]
+    # Pays d'études : chaque pays porte son continent, pour que le site réduise la liste aux continents choisis
+    dest_opts = [{"value": c, "label": n, "region": region_of(c)} for c, n in countries]
     domains = i18n.loc(DOMAINS, i18n.DOMAINS_EN)
     return [
         {
@@ -89,7 +91,7 @@ def steps() -> list[dict]:
                 {"id": "wished_regions", "label": t("Régions qui vous intéressent", "Regions you are interested in"), "type": "multiselect",
                  "required": False, "options": _opts(i18n.loc(REGIONS, i18n.REGIONS_EN))},
                 {"id": "wished_countries", "label": t("Pays précis (facultatif)", "Specific countries (optional)"), "type": "countries",
-                 "required": False, "options": country_opts},
+                 "required": False, "options": dest_opts, "filter_by": "wished_regions"},
                 {"id": "full_funding_only", "label": t("Seulement les bourses complètes (frais, logement, voyage)",
                                                        "Fully funded scholarships only (fees, accommodation, travel)"),
                  "type": "boolean", "required": False},
@@ -142,6 +144,10 @@ class QuestionnaireIn(BaseModel):
 
 class QuestionnaireOut(BaseModel):
     total_matches: int
+    # Bourses situées dans les pays ou continents choisis (affichées en premier), le reste suit
+    # sous « Autres bourses disponibles ». has_destination = faux si rien n'a été choisi.
+    destination_total: int = 0
+    has_destination: bool = False
     excluded_count: int
     items: list[MatchOut]
     recommended_offer: str
@@ -243,14 +249,20 @@ def submit(body: QuestionnaireIn, kind: str = Query("bourse", pattern="^(bourse|
         )
     stmt = select(Scholarship) if kind == "tout" else select(Scholarship).where(Scholarship.kind == kind)
     results, excluded = rank(list(db.scalars(stmt)), c, today, limit=500)
+    dest = c.strict_destination()
     items = [match_out(m) for m in results]
+    if dest:
+        for m in items:
+            m.in_destination = bool(set(m.scholarship.study_countries or []) & dest)
+        items.sort(key=lambda m: not m.in_destination)  # tri stable : l'ordre du score est gardé
+    destination_total = sum(1 for m in items if m.in_destination)
     if user is None:  # aperçu : 3 bourses, sans score (réservé aux comptes)
         items = items[:3]
         for m in items:
             m.score, m.chance = None, None
     rec = offers.recommend(p)
     return QuestionnaireOut(
-        total_matches=len(results), excluded_count=excluded, items=items, recommended_offer=rec,
+        total_matches=len(results), destination_total=destination_total, has_destination=bool(dest), excluded_count=excluded, items=items, recommended_offer=rec,
         offers=[{**o, "recommended": o["code"] == rec} for o in offers.catalog()],
         profile_saved=user is not None, missing=missing_minimum(c),
     )

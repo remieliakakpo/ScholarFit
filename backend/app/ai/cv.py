@@ -534,32 +534,118 @@ def diagnose(text: str, p: Profile | None, s: Scholarship | None, use_ai: bool, 
 
 
 # ------------------------------------------------------------------ CV structuré
-def _parse_entries(block: str) -> list[dict]:
-    entries: list[dict] = []
+BULLET = re.compile(r"^\s*[•●▪■◦○*·>]|^\s*[-–—]\s+(?!\d)")
+_JOINERS = ("/", "|", ",", "&", "(", "+", " de", " des", " du", " et", " la", " le", " les", " en", " à", " au", " aux", " pour", " avec", " of", " and", " the", " in", " for", " with")
+
+# Mentions propres à une recherche d'emploi, retirées d'un CV de candidature à une bourse
+JOB_MENTIONS = re.compile(
+    r"\bCDI\b|\bCDD\b|\bint[ée]rim|disponible\s+(?:d[èe]s|à partir|imm[ée]diatement|pour)|disponibilit[ée]\s+imm[ée]diate|"
+    r"pr[ée]tentions?\s+salariales?|salaire\s+souhait|(?:recherche|en qu[êe]te)\s+(?:d.un|un)\s+(?:poste|emploi|cdi|cdd)|"
+    r"à la recherche d.un (?:poste|emploi)|temps plein|temps partiel|contribuer à des missions|"
+    r"rejoindre (?:une|votre|un) (?:équipe|entreprise|structure|organisation)|"
+    r"open to work|available (?:from|immediately|for (?:a|an) (?:job|position|role))|full[- ]time (?:position|job|role)|"
+    r"part[- ]time (?:position|job)|permanent (?:contract|position)|fixed[- ]term contract|salary expectations|"
+    r"join (?:a|your|an) (?:team|company|organi[sz]ation)",
+    re.I,
+)
+
+
+def is_job_mention(text: str) -> bool:
+    return bool(JOB_MENTIONS.search(text or ""))
+
+
+def drop_job_mentions(text: str) -> str:
+    """Retire les phrases propres à une recherche d'emploi (CDI, CDD, disponibilité, missions…)."""
+    sents = writing.split_sentences(text or "")
+    return " ".join(s for s in sents if not is_job_mention(s))
+
+
+def _pure_dates(text: str) -> str | None:
+    m = DATE_RANGE.search(text)
+    if not m:
+        return None
+    rest = (text[: m.start()] + text[m.end():]).strip(" ,;:|-–—()")
+    return m.group(1) if not rest else None
+
+
+def _unwrap(block: str) -> list[tuple[bool, str]]:
+    """Recolle les lignes coupées par la mise en page du PDF. Retourne (puce ?, texte)."""
+    out: list[tuple[bool, str]] = []
     for raw in block.splitlines():
-        bullet = bool(re.match(r"^\s*[•●▪■◦○*·\-–—>]", raw))
-        line = _clean_line(raw)
-        if not line:
+        if not raw.strip():
             continue
-        dates_match = DATE_RANGE.search(line)
-        starts_entry = (dates_match is not None and not bullet) or (not entries) or (not bullet and not _starts_with_verb(line) and len(line.split()) <= 12 and not entries[-1]["bullets"] and entries[-1]["title"] == "")
-        if dates_match and not bullet:
-            dates = dates_match.group(1)
-            rest = (line[: dates_match.start()] + " " + line[dates_match.end():]).strip(" ,:;|-–—")
-            title, org = rest, ""
-            for sep in (" | ", " - ", " – ", ", ", " chez ", " at ", " à l'", " au ", " à "):
-                if sep in rest:
-                    a, b = rest.split(sep, 1)
-                    if a.strip() and b.strip():
-                        title, org = a.strip(), (b.strip() if sep not in (" à l'",) else "l'" + b.strip())
-                        break
-            entries.append({"title": title, "organization": org, "location": "", "dates": _normalize_dates(dates), "bullets": []})
-        elif starts_entry and not entries:
-            entries.append({"title": line, "organization": "", "location": "", "dates": "", "bullets": []})
-        elif entries and not entries[-1]["organization"] and not entries[-1]["bullets"] and not bullet and not _starts_with_verb(line) and len(line.split()) <= 8:
-            entries[-1]["organization"] = line
-        else:
+        bullet = bool(BULLET.match(raw))
+        text = _clean_line(raw)
+        if not text:
+            continue
+        if out and not bullet and _pure_dates(text) is None:
+            prev_bullet, prev = out[-1]
+            cont = text[0].islower() or prev.rstrip().lower().endswith(_JOINERS)
+            # « OWASP » puis « ZAP » : suite très courte d'une ligne de compétences « Catégorie : … »
+            cont = cont or (" : " in prev or ": " in prev) and ":" not in text and len(text.split()) <= 2 and not prev.rstrip().endswith(".")
+            if cont:
+                out[-1] = (prev_bullet, f"{prev.rstrip()} {text}")
+                continue
+        out.append((bullet, text))
+    return out
+
+
+def _split_header(text: str) -> tuple[str, str, str, str]:
+    """« Stagiaire | Future Interns | À distance | Inde  Fév. 2026 - Mars 2026 » → (titre, organisme, lieu, dates)."""
+    dates = ""
+    m = DATE_RANGE.search(text)
+    if m:
+        dates = m.group(1)
+        text = (text[: m.start()] + " " + text[m.end():]).strip(" ,:;|-–—")
+    text = re.sub(r"\s{2,}", " ", text)
+    if " | " in text or "|" in text:
+        parts = [x.strip() for x in text.split("|") if x.strip()]
+        title = parts[0] if parts else ""
+        org = parts[1] if len(parts) > 1 else ""
+        loc = ", ".join(parts[2:])
+        return title, org, loc, dates
+    for sep in (" - ", " – ", ", ", " chez ", " at ", " à l'", " au ", " à "):
+        if sep in text:
+            a, b = text.split(sep, 1)
+            if a.strip() and b.strip():
+                return a.strip(), ("l'" + b.strip() if sep == " à l'" else b.strip()), "", dates
+    return text, "", "", dates
+
+
+def _entry(title: str = "", org: str = "", loc: str = "", dates: str = "") -> dict:
+    return {"title": title, "organization": org, "location": loc, "dates": _normalize_dates(dates) if dates else "", "bullets": []}
+
+
+def _parse_entries(block: str, orphan_dates: list[str] | None = None) -> list[dict]:
+    """Étapes d'une rubrique (formation, expériences, projets…) : en-tête « titre | organisme | lieu »,
+    dates à droite ou sur une ligne à part, puis les puces."""
+    entries: list[dict] = []
+    for bullet, line in _unwrap(block):
+        pure = _pure_dates(line)
+        if pure is not None:
+            target = next((e for e in reversed(entries) if not e["dates"]), None)
+            if target is not None:
+                target["dates"] = _normalize_dates(pure)
+            elif orphan_dates is not None:
+                orphan_dates.append(pure)
+            continue
+        if bullet:
+            if not entries:
+                entries.append(_entry())
             entries[-1]["bullets"].append(line)
+            continue
+        has_date = DATE_RANGE.search(line) is not None
+        headerish = has_date or "|" in line or (
+            len(line.split()) <= 12 and not _starts_with_verb(line) and not line.rstrip().endswith(".")
+        )
+        last = entries[-1] if entries else None
+        if last and not last["organization"] and not last["bullets"] and last["title"] and not has_date and "|" not in line \
+                and not _starts_with_verb(line) and len(line.split()) <= 8 and not line.rstrip().endswith("."):
+            last["organization"] = line  # « Licence d'informatique » puis « Université de Lomé »
+        elif headerish or last is None:
+            entries.append(_entry(*_split_header(line)))
+        else:
+            last["bullets"].append(line)
     return entries
 
 
@@ -582,33 +668,218 @@ def _max_year(e: dict) -> int:
     return max(ys) if ys else 0
 
 
-def _list_items(block: str) -> list[str]:
+def _list_items(block: str, orphan_dates: list[str] | None = None) -> list[str]:
     items = []
-    for raw in block.splitlines():
-        line = _clean_line(raw)
-        if not line:
+    for _bullet, line in _unwrap(block):
+        pure = _pure_dates(line)
+        if pure is not None:
+            if orphan_dates is not None:
+                orphan_dates.append(pure)
             continue
         items.append(writing.clean_punctuation(line).rstrip("."))
     return items
 
 
-def _languages_items(block: str, p: Profile | None, language: str) -> list[str]:
-    items = _list_items(block) if block else []
-    if p and p.languages and not items:
+def _lang_item(name: str, level: str) -> str:
+    return f"{name} : {level}"
+
+
+def _languages_items(block: str, p: Profile | None, language: str, orphan_dates: list[str] | None = None) -> list[str]:
+    """Langues sur une seule ligne, comme dans un CV ATS : « Français : courant | Anglais : B2 »."""
+    parts: list[str] = []
+    for item in (_list_items(block, orphan_dates) if block else []):
+        parts += [x.strip() for x in re.split(r"\s*\|\s*|\s*;\s*", item) if x.strip()]
+    if p and p.languages and not parts:
         names = LANG_NAMES["en" if language == "en" else "fr"]
         words = LEVEL_WORDS["en" if language == "en" else "fr"]
         for code, level in p.languages.items():
             name = names.get(code, code.upper())
             lvl = words.get(str(level).lower(), str(level))
-            items.append(f"{name}, {lvl}")
+            parts.append(_lang_item(name, lvl) if language != "en" else f"{name}: {lvl}")
     if p and p.language_scores:
         scores = ", ".join(f"{t} {v:g}" for t, v in p.language_scores.items())
-        if not any(t.lower() in " ".join(items).lower() for t in p.language_scores):
-            items.append(scores)
-    return items
+        if not any(t.lower() in " ".join(parts).lower() for t in p.language_scores):
+            parts.append(scores)
+    return [" | ".join(parts)] if parts else []
 
 
-def header_from(p: Profile | None, cv_text: str, email: str | None, fmt: CVFormat, language: str, s: Scholarship | None) -> dict:
+# ------------------------------------------------------------------ en-tête et profil personnalisé
+def _skill_keywords(sections: dict[str, dict], limit: int = 5) -> list[str]:
+    """Outils et compétences clés : le premier élément de chaque catégorie, puis les suivants."""
+    sec = sections.get("skills")
+    if not sec:
+        return []
+    groups = []
+    for it in sec["items"]:
+        body = it.split(":", 1)[1] if ":" in it else it
+        groups.append([x.strip(" .") for x in re.split(r",|;|\|", body) if x.strip(" .") and len(x.split()) <= 4])
+    out: list[str] = []
+    for i in range(6):
+        for g in groups:
+            if i < len(g) and g[i] not in out:
+                out.append(g[i])
+            if len(out) >= limit:
+                return out
+    return out
+
+
+def _skill_categories(sections: dict[str, dict]) -> list[str]:
+    sec = sections.get("skills")
+    if not sec:
+        return []
+    return [it.split(":", 1)[0].strip() for it in sec["items"] if ":" in it and len(it.split(":", 1)[0].split()) <= 5]
+
+
+def _join_fr(items: list[str], language: str = "fr") -> str:
+    if len(items) <= 1:
+        return "".join(items)
+    return ", ".join(items[:-1]) + (" and " if language == "en" else " et ") + items[-1]
+
+
+def _intake_year(s: Scholarship | None, today: date) -> int:
+    d = s.deadline if s and s.deadline else None
+    if d is None:
+        return today.year + (1 if today.month >= 6 else 0)
+    return d.year if d.month <= 7 else d.year + 1
+
+
+def _destination(s: Scholarship | None, p: Profile | None, language: str) -> list[str]:
+    codes = list(s.study_countries or []) if s else []
+    if not codes and p:
+        codes = list(p.wished_countries or [])
+    return [country_name(c, language) for c in codes[:3]]
+
+
+def objective_line(s: Scholarship | None, p: Profile | None, language: str, today: date) -> str:
+    """Ligne sous les coordonnées, à la place de « Disponible pour un CDI » des CV d'emploi."""
+    if s is None:
+        dest = _destination(None, p, language)
+        if not dest:
+            return ""
+        return ("Mobility: " if language == "en" else "Mobilité : ") + ", ".join(dest)
+    year = _intake_year(s, today)
+    dest = _destination(s, p, language)
+    if language == "en":
+        parts = [f"Application: {s.title}", f"Intake {year}"] + ([f"Mobility: {', '.join(dest)}"] if dest else [])
+    else:
+        parts = [f"Candidature : {s.title}", f"Rentrée {year}"] + ([f"Mobilité : {', '.join(dest)}"] if dest else [])
+    return " | ".join(parts)
+
+
+def headline_for(p: Profile | None, cv_text: str, sections: dict[str, dict], language: str) -> str:
+    """Titre en capitales du modèle ATS : diplôme visé | spécialités. Ex. « Master en informatique | Sécurité réseau | SOC »."""
+    level = LEVEL_NOUN["en" if language == "en" else "fr"].get(p.target_level or "", "") if p else ""
+    domain = domain_name(p.domain, language) if p and p.domain and p.domain != "tous" else ""
+    if language == "en":
+        first = f"{level} applicant, {domain}" if level and domain else (f"{level} applicant" if level else domain)
+    else:
+        first = f"{level} en {domain.lower()}" if level and domain else (level or domain)
+    # Spécialités : celles du titre du CV d'origine (après le métier), sinon les catégories de compétences
+    specs: list[str] = []
+    lines = [l.strip() for l in cv_text.splitlines()[:5] if l.strip()]
+    for l in lines[1:3]:
+        if "|" in l and not EMAIL.search(l) and not PHONE.search(l) and not is_job_mention(l):
+            segs = [x.strip() for x in l.split("|") if x.strip()]
+            specs = segs[1:] if len(segs) > 1 else segs
+            break
+    if not specs:
+        specs = _skill_categories(sections)[:2]
+    def tidy(x: str) -> str:
+        x = x.strip()
+        return x[:1].upper() + x[1:].lower() if x.isupper() and len(x) > 4 else x
+    parts = [first] + [tidy(x) for x in specs[:3]]
+    return " | ".join(x for x in parts if x)
+
+
+def _latest(sections: dict[str, dict], key: str) -> dict | None:
+    sec = sections.get(key)
+    if not sec or not sec["entries"]:
+        return None
+    return max(sec["entries"], key=_max_year)
+
+
+def personal_summary(raw: dict[str, str], sections: dict[str, dict], p: Profile | None, s: Scholarship | None, language: str, today: date) -> str:
+    """Profil de trois ou quatre phrases propres à la personne et à la bourse : diplôme et
+    établissement, expérience réelle, compétences clés, puis objectif lié à la bourse et au pays."""
+    sents: list[str] = []
+    level = LEVEL_NOUN["en" if language == "en" else "fr"].get(p.target_level or "", "") if p else ""
+    domain = (domain_name(p.domain, language) if p and p.domain and p.domain != "tous" else "").lower()
+    edu = _latest(sections, "education")
+    exps = (sections.get("experience") or {}).get("entries", [])
+    skills = _skill_keywords(sections, 4)
+
+    # 1 et 2. Ce que le CV d'origine dit déjà de la personne, sans les phrases propres à l'emploi
+    original = []
+    if language != "en" and raw.get("profil"):
+        text = writing.clean_punctuation(" ".join(raw["profil"].split()))
+        original = [x for x in writing.split_sentences(text) if not is_job_mention(x) and not re.search(r"\bje souhaite\b|\bje recherche\b|\bmon objectif\b", x, re.I)]
+    if original:
+        sents += original[:2]
+    else:
+        if language == "en":
+            if edu and edu.get("title"):
+                where = f" from {edu['organization']}" if edu.get("organization") else ""
+                sents.append(f"{edu['title']}{where}.")
+            if exps:
+                first = exps[0]
+                at = f" at {first['organization']}" if first.get("organization") else ""
+                more = f" and {len(exps) - 1} other professional experience{'s' if len(exps) > 2 else ''}" if len(exps) > 1 else ""
+                sents.append(f"Hands-on experience as {writing.lower_first(first['title'])}{at}{more}.")
+            if skills:
+                sents.append(f"Key skills include {_join_fr(skills, 'en')}.")
+        else:
+            if edu and edu.get("title"):
+                where = f" ({edu['organization']})" if edu.get("organization") else ""
+                done = 0 < _max_year(edu) <= today.year
+                fem = edu["title"].lower().startswith(("licence", "maîtrise", "maitrise", "classe"))
+                lead = ("Titulaire d'une " if fem else "Titulaire d'un ") if done else "Actuellement en "
+                title = writing.lower_first(edu["title"]) if done else edu["title"]
+                sents.append(f"{lead}{title}{where}.")
+            if exps:
+                first = exps[0]
+                chez = f" chez {first['organization']}" if first.get("organization") else ""
+                more = f", ainsi que {len(exps) - 1} autre{'s' if len(exps) > 2 else ''} expérience{'s' if len(exps) > 2 else ''}" if len(exps) > 1 else ""
+                sents.append(f"Expérience pratique comme {writing.lower_first(first['title'])}{chez}{more}.")
+            if skills:
+                sents.append(f"Compétences clés en {_join_fr(skills)}.")
+    # 3. Compétences, si le profil d'origine ne les cite pas
+    said = " ".join(original).lower()
+    if original and skills and not re.search(r"comp[ée]tences|ma[îi]trise|skills", said) and not any(k.lower() in said for k in skills[:2]):
+        sents.append(f"Key skills include {_join_fr(skills, 'en')}." if language == "en" else f"Je maîtrise {_join_fr(skills)}.")
+    # 4. L'objectif, lié à la bourse
+    dest_codes = list(s.study_countries or [])[:1] if s else []
+    if language == "en":
+        cname = country_name(dest_codes[0], "en") if dest_codes else ""
+        where = (" in the " if cname.startswith(("United", "Netherlands", "Philippines", "Czech", "Dominican", "Gambia")) else " in ") + cname if cname else ""
+        if s:
+            sents.append(f"Applying to the {s.title} to pursue a {level or 'degree'}{(' in ' + domain) if domain else ''}{where}.")
+    else:
+        where = f" {writing.country_in(dest_codes[0], country_name(dest_codes[0], 'fr'))}" if dest_codes else ""
+        if s:
+            what = f"un {level.lower()}" if level and level.lower() != "licence" else ("une licence" if level else "mes études")
+            sents.append(f"Je candidate à {_article(s.title)} pour préparer {what}{(' en ' + domain) if domain else ''}{where}.")
+    if p and p.project:
+        proj = [x for x in writing.split_sentences(writing.clean_punctuation(p.project, language)) if not is_job_mention(x)]
+        after = next((x for x in proj if re.search(r"\b(apr[eè]s|ensuite|retour|rentrer|after|return|back home)\b", x, re.I)), None)
+        pick = after or (proj[0] if proj else None)
+        if pick and (language != "en" or not re.search(r"[éèàùç]", pick)):
+            sents.append(pick)
+    out = " ".join(writing.complete_sentence(writing.clean_punctuation(x, language)) for x in sents if x)
+    return writing.clean_punctuation(out, language)
+
+
+def _article(title: str) -> str:
+    """« la Bourse Eiffel », « le programme DAAD », sinon le nom seul."""
+    low = title.lower()
+    if low.startswith(("bourse", "bourses")):
+        return "la " + title
+    if low.startswith(("programme", "prix", "fonds", "master", "doctorat", "stage")):
+        return "le " + title
+    return title
+
+
+def header_from(p: Profile | None, cv_text: str, email: str | None, fmt: CVFormat, language: str, s: Scholarship | None,
+                sections: dict[str, dict] | None = None, today: date | None = None) -> dict:
     first_lines = [l.strip() for l in cv_text.splitlines()[:6] if l.strip()]
     name = (p.full_name if p and p.full_name else (first_lines[0] if first_lines and len(first_lines[0].split()) <= 5 and not EMAIL.search(first_lines[0]) else "")) or ""
     mail = email or (EMAIL.search(cv_text).group(0) if EMAIL.search(cv_text) else "")
@@ -616,14 +887,12 @@ def header_from(p: Profile | None, cv_text: str, email: str | None, fmt: CVForma
     country = country_name(p.residence_country, language) if p and p.residence_country else ""
     location = ", ".join(x for x in [p.city if p else None, country] if x)
     links = (p.links if p and p.links else ", ".join(dict.fromkeys(m.group(1) for m in LINK.finditer(cv_text)))) or ""
-    level = LEVEL_NOUN["en" if language == "en" else "fr"].get(p.target_level or "", "") if p else ""
-    domain = domain_name(p.domain, language) if p and p.domain and p.domain != "tous" else ""
-    if language == "en":
-        headline = f"{level} applicant in {domain.lower() if domain else ''}".strip() if level else domain
-        headline = headline.replace(" in ", " in ", 1) if domain else (f"{level} applicant" if level else "")
-    else:
-        headline = f"Projet de {level.lower()} en {domain.lower()}" if level and domain else (f"Projet de {level.lower()}" if level else domain)
-    out = {"name": name, "headline": headline, "email": mail, "phone": phone, "location": location, "links": links, "birth_date": "", "nationality": ""}
+    if not links and re.search(r"\blinkedin\b", "\n".join(first_lines), re.I):
+        links = "LinkedIn"
+    headline = headline_for(p, cv_text, sections or {}, language)
+    objective = objective_line(s, p, language, today or date.today())
+    out = {"name": name, "headline": headline, "email": mail, "phone": phone, "location": location, "links": links,
+           "objective": objective, "birth_date": "", "nationality": ""}
     if fmt.show_birth_date and p and p.birth_date:
         b = p.birth_date
         out["birth_date"] = f"{b.day} {EN_MONTHS[b.month - 1]} {b.year}" if language == "en" else b.strftime("%d/%m/%Y")
@@ -647,6 +916,8 @@ def build_cv_rules(cv_text: str, p: Profile | None, s: Scholarship | None, email
     raw = split_sections(cv_text)
     changes: list[str] = []
     sections_by_key: dict[str, dict] = {}
+    orphans: list[str] = []  # dates que la mise en page du PDF a détachées de leur étape
+    removed_job = 0
 
     for fr_key, block in raw.items():
         if fr_key in ("entete",):
@@ -655,12 +926,17 @@ def build_cv_rules(cv_text: str, p: Profile | None, s: Scholarship | None, email
         if key == "summary":
             continue
         if key in ("skills", "languages", "interests", "references", "awards", "publications"):
-            items = _languages_items(block, p, language) if key == "languages" else _list_items(block)
-            sections_by_key[key] = {"key": key, "title": "", "kind": "list", "entries": [], "items": items}
+            items = _languages_items(block, p, language, orphans) if key == "languages" else _list_items(block, orphans)
+            kept = [i for i in items if not is_job_mention(i)]
+            removed_job += len(items) - len(kept)
+            sections_by_key[key] = {"key": key, "title": "", "kind": "list", "entries": [], "items": kept}
         else:
-            entries = _parse_entries(block)
+            entries = _parse_entries(block, orphans)
             improved = 0
             for e in entries:
+                before_n = len(e["bullets"])
+                e["bullets"] = [b for b in e["bullets"] if not is_job_mention(b)]
+                removed_job += before_n - len(e["bullets"])
                 new = [_improve_bullet(b) for b in e["bullets"]]
                 improved += sum(1 for a, b in zip(e["bullets"], new) if a.rstrip(".") != b)
                 e["bullets"] = [b for b in new if b]
@@ -673,6 +949,15 @@ def build_cv_rules(cv_text: str, p: Profile | None, s: Scholarship | None, email
             if improved:
                 changes.append(t(f"{section_title(fmt, key, 'fr')} : {improved} ligne(s) reformulée(s) avec un verbe d'action.", f"{section_title(fmt, key, 'en')}: {improved} line(s) rewritten with an action verb."))
             sections_by_key[key] = {"key": key, "title": "", "kind": "entries", "entries": entries, "items": []}
+
+    # Dates détachées (fin de page du PDF) : rendues, dans l'ordre, aux étapes qui n'en ont pas
+    for key in ("experience", "education", "engagement", "projects"):
+        for e in (sections_by_key.get(key) or {}).get("entries", []):
+            if orphans and not e["dates"] and e["title"]:
+                e["dates"] = _normalize_dates(orphans.pop(0))
+    for sec in sections_by_key.values():
+        if sec["kind"] == "entries":
+            sec["entries"].sort(key=_max_year, reverse=True)
 
     if "languages" not in sections_by_key and p and (p.languages or p.language_scores):
         sections_by_key["languages"] = {"key": "languages", "title": "", "kind": "list", "entries": [], "items": _languages_items("", p, language)}
@@ -697,14 +982,14 @@ def build_cv_rules(cv_text: str, p: Profile | None, s: Scholarship | None, email
         sec["title"] = section_title(fmt, key, language)
         sections.append(sec)
 
-    summary = ""
-    if p and p.project:
-        sents = writing.split_sentences(writing.clean_punctuation(p.project))
-        summary = " ".join(writing.complete_sentence(x) for x in sents[:2])
-    elif raw.get("profil"):
-        summary = " ".join(writing.complete_sentence(x) for x in writing.split_sentences(writing.clean_punctuation(raw["profil"].replace("\n", " ")))[:3])
+    summary = personal_summary(raw, sections_by_key, p, s, language, today)
     if summary:
-        changes.append(t(f"{fmt.summary_title_fr} rédigé à partir de votre projet, en tête du CV.", f"{fmt.summary_title_en} written from your study plan, at the top of the CV."))
+        changes.append(t(f"{fmt.summary_title_fr} réécrit pour cette bourse : votre diplôme, votre expérience, vos compétences clés et votre objectif d'études.",
+                         f"{fmt.summary_title_en} rewritten for this scholarship: your degree, experience, key skills and study goal."))
+    head_job = sum(1 for l in cv_text.splitlines()[:6] if is_job_mention(l))
+    if removed_job or head_job or (raw.get("profil") and is_job_mention(raw["profil"])):
+        changes.append(t("Mentions propres à une recherche d'emploi retirées (CDI, CDD, disponibilité) : elles n'ont pas leur place dans une candidature à une bourse.",
+                         "Job-search mentions removed (contract type, availability): they do not belong in a scholarship application."))
     changes.insert(0, t(f"Format appliqué : {fmt.label}.", f"Format applied: {fmt.label_en}."))
 
     return {
@@ -714,7 +999,7 @@ def build_cv_rules(cv_text: str, p: Profile | None, s: Scholarship | None, email
         "format_reason": reason,
         "format_rules": list(fmt.rules),
         "layout": fmt.layout,
-        "header": header_from(p, cv_text, email, fmt, language, s),
+        "header": header_from(p, cv_text, email, fmt, language, s, sections_by_key, today),
         "summary_title": fmt.summary_title_en if language == "en" else fmt.summary_title_fr,
         "summary": summary,
         "sections": sections,
@@ -730,6 +1015,7 @@ CV_BUILD_SCHEMA = {
     "type": "object",
     "properties": {
         "headline": {"type": "string"},
+        "objective": {"type": "string"},
         "summary": {"type": "string"},
         "sections": {
             "type": "array",
@@ -758,20 +1044,43 @@ CV_BUILD_SCHEMA = {
         },
         "changes": {"type": "array", "items": {"type": "string"}},
     },
-    "required": ["headline", "summary", "sections", "changes"],
+    "required": ["headline", "objective", "summary", "sections", "changes"],
     "additionalProperties": False,
 }
 
 CV_BUILD_SYSTEM = """Vous êtes rédacteur de CV pour des candidatures de bourses d'études internationales. Vous produisez
 la version finale du CV d'un étudiant, prête à être envoyée, au format exigé et dans la langue demandée.
 
+Structure (modèle ATS de ScholarFit, à suivre sauf si les règles du format imposent autre chose) :
+1. headline : « Diplôme visé en domaine | spécialité | spécialité », deux à quatre segments séparés par « | »,
+   tirés du parcours réel (ex. « Master en informatique | Sécurité réseau et systèmes | SOC »).
+2. objective : une ligne « Candidature : nom de la bourse | Rentrée année | Mobilité : pays » (en anglais
+   « Application: … | Intake … | Mobility: … »). C'est elle qui remplace les mentions de disponibilité des CV d'emploi.
+3. summary (profil) : trois ou quatre phrases écrites pour CETTE personne et CETTE bourse. Phrase 1 : diplôme
+   le plus récent, établissement et ce qui distingue le parcours. Phrase 2 : l'expérience concrète la plus utile
+   pour la bourse, avec les outils ou résultats réels. Phrase 3 : les compétences clés qui répondent aux critères
+   du jury. Phrase 4 : le diplôme visé dans le pays de la bourse et ce que la personne fera ensuite (projet réel).
+   En français, la première personne est admise (« j'ai », « je souhaite ») ; en anglais, style CV sans « I ».
+   Un profil qui pourrait convenir à n'importe quel candidat est refusé.
+4. skills : une ligne par catégorie, au format « Catégorie : élément, élément, élément » (ex. « Sécurité Web :
+   OWASP Top 10, Postman »). Trois à six catégories, construites à partir des compétences réelles.
+5. experience : chaque étape a title (poste ou rôle), organization, location (« Ville, Pays » ou « À distance »),
+   dates, puis deux à quatre bullets.
+6. projects : bullets courts, entries sans titre si le CV d'origine n'en donne pas.
+7. education : title (diplôme), organization (établissement), dates, et une bullet pour un partenariat, une
+   mention ou un mémoire si le CV d'origine en parle.
+8. languages : une seule ligne « Français : courant | Anglais : B2 ».
+
 Règles de fond :
 - Utilisez uniquement les faits du CV d'origine et du profil. Aucune expérience, date, note, chiffre,
   employeur ou distinction ne doit être ajouté. Si un chiffre manque, formulez la ligne sans chiffre.
+- Retirez toute mention propre à une recherche d'emploi : type de contrat (CDI, CDD, intérim), disponibilité
+  pour un poste, prétentions salariales, « contribuer à des missions », « rejoindre une entreprise ».
+  Le CV sert une candidature à une bourse d'études.
 - Adaptez au jury de la bourse : placez d'abord ce qui répond à ses critères, reprenez ses mots-clés
   lorsqu'ils décrivent réellement l'expérience, retirez ce qui n'apporte rien à cette candidature.
-- Chaque ligne d'expérience commence par un verbe d'action au passé (en français : participe passé sans
-  « j'ai », ex. « Organisé », « Conçu » ; en anglais : « Led », « Designed »). Deux à quatre lignes par étape.
+- Chaque ligne d'expérience commence par un verbe d'action ou un nom d'action (« Analyse de… », « Déploiement
+  de… », « Organisé… » ; en anglais « Led », « Designed »).
 - Dates homogènes, du plus récent au plus ancien (« sept. 2022 - juin 2024 », « 2022 - 2024 »).
 - Traduisez fidèlement si la langue demandée diffère de celle du CV d'origine.
 
@@ -779,9 +1088,6 @@ Règles de forme :
 - Pas de tiret cadratin ni demi-cadratin comme ponctuation, pas de point-virgule en fin de ligne,
   pas de point final sur les lignes d'expérience, pas de crochets ni d'emplacement à compléter.
 - Aucune formule creuse (« passionné », « dynamique et motivé », « force de proposition », « team player »).
-- Le résumé (summary) tient en deux ou trois phrases complètes, précises, sans « je » en anglais
-  (style CV) et sans adjectifs vides. Il annonce le projet d'études et ce qui le rend crédible.
-- headline : une ligne courte qui annonce le diplôme visé et le domaine.
 - changes : 3 à 6 phrases courtes en français, au vouvoiement, qui expliquent ce qui a été adapté et pourquoi."""
 
 
@@ -809,6 +1115,8 @@ Engagement (profil) : {p.engagement or '-'}
 Projet : {p.project or '-'}
 """
     user = f"""Langue du CV : {'anglais' if base['language'] == 'en' else 'français'}
+Ligne objectif proposée : {base['header'].get('objective') or '-'}
+Premier jet du profil (à réécrire, plus précis et propre à la personne) : {base['summary'] or '-'}
 Format : {base['format_label']}
 Règles du format :
 {fmt_rules}
@@ -827,16 +1135,20 @@ CV D'ORIGINE
     for sec in data["sections"]:
         entries = []
         for e in sec.get("entries", []):
-            bullets = [writing.clean_punctuation(b, lang).rstrip(".;") for b in e.get("bullets", []) if b and "[" not in b]
+            bullets = [writing.clean_punctuation(b, lang).rstrip(".;") for b in e.get("bullets", []) if b and "[" not in b and not is_job_mention(b)]
             entries.append({k: writing.clean_punctuation(e.get(k, ""), lang).rstrip(".") for k in ("title", "organization", "location", "dates")} | {"bullets": bullets})
-        items = [writing.clean_punctuation(i, lang).rstrip(".") for i in sec.get("items", []) if i and "[" not in i]
+        items = [writing.clean_punctuation(i, lang).rstrip(".") for i in sec.get("items", []) if i and "[" not in i and not is_job_mention(i)]
         if not entries and not items:
             continue
         sections.append({"key": sec["key"], "title": section_title(fmt, sec["key"], lang), "kind": sec["kind"], "entries": entries, "items": items})
     base["sections"] = sections
-    base["summary"] = " ".join(writing.complete_sentence(x) for x in writing.split_sentences(writing.clean_punctuation(data.get("summary", ""), lang)))
+    summary = " ".join(writing.complete_sentence(x) for x in writing.split_sentences(writing.clean_punctuation(drop_job_mentions(data.get("summary", "")), lang)))
+    if summary:
+        base["summary"] = summary
     if data.get("headline"):
         base["header"]["headline"] = writing.clean_punctuation(data["headline"], lang).rstrip(".")
+    if data.get("objective") and not is_job_mention(data["objective"]):
+        base["header"]["objective"] = writing.clean_punctuation(data["objective"], lang).rstrip(".")
     base["changes"] = [t(f"Format appliqué : {fmt.label}.", f"Format applied: {fmt.label_en}.")] + [writing.complete_sentence(writing.clean_punctuation(c)) for c in data.get("changes", [])][:6]
     base["ai_used"] = True
     return base
@@ -845,7 +1157,8 @@ CV D'ORIGINE
 def cv_plain_text(cv: dict) -> str:
     """Version texte du CV structuré (enregistrée dans le profil pour le matching et les lettres)."""
     h = cv.get("header", {})
-    out = [h.get("name", ""), h.get("headline", ""), " | ".join(x for x in [h.get("email"), h.get("phone"), h.get("location"), h.get("links")] if x), ""]
+    out = [h.get("name", ""), h.get("headline", ""), " | ".join(x for x in [h.get("location"), h.get("phone"), h.get("email"), h.get("links")] if x)]
+    out += ([h["objective"]] if h.get("objective") else []) + [""]
     if cv.get("summary"):
         out += [cv.get("summary_title", "Profil").upper(), cv["summary"], ""]
     for sec in cv.get("sections", []):
