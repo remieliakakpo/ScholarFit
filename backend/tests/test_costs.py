@@ -216,11 +216,11 @@ def test_identical_request_reuses_answer(client, monkeypatch):
     assert len(calls) == 2
 
 
-def test_sources_collected_every_two_days():
+def test_sources_collected_once_a_week():
     from app.scrapers.collector import load_source_configs
 
     freqs = {c["frequency_hours"] for c in load_source_configs() if c.get("frequency_hours")}
-    assert freqs == {48}  # les autres sources gardent la valeur par défaut : une fois par semaine
+    assert freqs == {168}  # sites et découverte : une fois par semaine
 
 
 def test_doubtful_record_gets_targeted_review(client, source, ai_on, monkeypatch):

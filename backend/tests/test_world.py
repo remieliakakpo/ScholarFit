@@ -86,6 +86,12 @@ def test_questionnaire_anonymous_and_logged(client):
     for i in res["items"]:
         assert set(i["scholarship"]["study_countries"]) & {"FR", "DE", "GB", "JP", "CN", "KR"} or i["scholarship"]["study_countries"] == [] \
             or {"europe", "asie"} & set(i["scholarship"]["regions"])
+    # Bourses des continents choisis d'abord, puis « Autres bourses disponibles »
+    assert res["has_destination"] and res["destination_total"] == sum(1 for i in res["items"] if i["in_destination"])
+    flags = [i["in_destination"] for i in res["items"]]
+    assert flags == sorted(flags, reverse=True)
+    dest_q = next(q for st in steps for q in st["questions"] if q["id"] == "wished_countries")
+    assert dest_q["filter_by"] == "wished_regions" and {"value": "FR", "region": "europe"}.items() <= next(o for o in dest_q["options"] if o["value"] == "FR").items()
     p = client.get("/api/profile", headers=h).json()
     assert p["wished_regions"] == ["europe", "asie"] and p["grade_average"] == 15.5
     assert client.post("/api/questionnaire", json={"answers": {"grade_average": 25}}).status_code == 422

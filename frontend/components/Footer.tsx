@@ -33,7 +33,7 @@ export default function Footer({ loggedIn }: { loggedIn: boolean }) {
       <div className="border-t border-line">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-5 text-xs text-muted sm:px-6">
           <span>© {new Date().getFullYear()} ScholarFit. {t("Tous droits réservés.")}</span>
-          <span className="flex flex-wrap items-center gap-x-4 gap-y-1"><LiteLink /><span>{t("Offres mises à jour automatiquement chaque jour.")}</span></span>
+          <span className="flex flex-wrap items-center gap-x-4 gap-y-1"><LiteLink /><span>{t("Offres mises à jour automatiquement chaque semaine.")}</span></span>
         </div>
       </div>
     </footer>

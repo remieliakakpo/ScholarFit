@@ -106,7 +106,7 @@ export default function ScholarshipCard({ s, match, meta, loggedIn, lockedScore 
         <div className="mt-auto flex flex-wrap items-center gap-2 pt-1">
           {loggedIn && <AddToTracker scholarshipId={s.id} />}
           {loggedIn && <Link href={`/lettre/${s.id}`} className="btn-ghost px-4 py-2 text-xs">{t("Lettre de motivation")}</Link>}
-          <a href={s.official_url} target="_blank" rel="noopener noreferrer" className="btn-primary ml-auto px-4 py-2 text-xs">{t("Postuler")} <Icon name="ext" className="h-3.5 w-3.5" /></a>
+          <Link href={`/postuler/${s.id}`} className="btn-primary ml-auto px-4 py-2 text-xs">{t("Postuler")} <Icon name="arrow" className="h-3.5 w-3.5" /></Link>
         </div>
       </div>
 

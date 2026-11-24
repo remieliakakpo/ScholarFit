@@ -11,7 +11,7 @@ export type CVData = {
   format_reason: string;
   format_rules: string[];
   layout: "single" | "dated";
-  header: { name: string; headline: string; email: string; phone: string; location: string; links: string; birth_date: string; nationality: string };
+  header: { name: string; headline: string; email: string; phone: string; location: string; links: string; objective?: string; birth_date: string; nationality: string };
   summary_title: string;
   summary: string;
   sections: CVSection[];
@@ -67,6 +67,7 @@ export type Fit = {
 export type PayMethod = { code: string; label: string; logo: string; number: string; how: string };
 export type Credits = {
   free_total: number;
+  free_left: number;
   paid_total: number;
   used: number;
   available: number;
@@ -74,12 +75,13 @@ export type Credits = {
   price: number;
   price_label: string;
   regenerations: number;
+  subscription: { active: boolean; until: string | null; until_label: string | null; monthly_packs: number; used_this_period: number; left_this_period: number; days: number };
   packs: { scholarship_id: number | null; scholarship_title: string | null; cv_runs: number; letter_runs: number; source: string }[];
   methods: PayMethod[];
   orders?: { id: number; amount: number; method: string; reference: string | null; status: string; status_label: string; created_at: string }[];
 };
 
-/** Erreur de l'API avec son code métier (dossier_payant, relances_epuisees…). */
+/** Erreur de l'API avec son code métier (abonnement_requis, limite_mensuelle, relances_epuisees…). */
 export class DocError extends ApiError {
   constructor(status: number, message: string, public code: string | null) {
     super(status, message);

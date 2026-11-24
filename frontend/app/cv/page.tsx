@@ -119,7 +119,7 @@ function CVTool() {
       setDirty(false);
       setTimeout(() => document.getElementById("cv-adapte")?.scrollIntoView({ behavior: "smooth", block: "start" }), 60);
     } catch (e) {
-      if (e instanceof DocError && e.code === "dossier_payant") setPaying(true);
+      if (e instanceof DocError && e.code === "abonnement_requis") setPaying(true);
       setError((e as Error).message);
     } finally {
       setGenBusy(false);

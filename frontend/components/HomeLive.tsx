@@ -42,7 +42,6 @@ export function HeroGlobe() {
   return (
     <div className="relative aspect-square w-full">
       <WorldGlobe markers={(rows ?? []).map((r) => ({ code: r.code, name: countryName(r.code, lang, r.name), count: r.count }))} />
-      <p className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 whitespace-nowrap text-xs text-muted">{t("Faites tourner le globe")}</p>
     </div>
   );
 }

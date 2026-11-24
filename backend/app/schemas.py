@@ -235,6 +235,8 @@ class MatchOut(BaseModel):
     reasons: list[str]
     gaps: list[str]
     days_left: int | None
+    # Questionnaire : la bourse se trouve-t-elle dans les pays ou continents choisis ? (None = aucun choix)
+    in_destination: bool | None = None
 
 
 class MatchesOut(BaseModel):

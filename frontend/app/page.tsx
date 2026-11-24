@@ -13,12 +13,12 @@ const STEPS = [
   { n: "01", icon: "user", t: "Répondez à 5 questions", d: "Niveau, nationalité, domaine, pays visés, langues. Deux minutes, sans compte." },
   { n: "02", icon: "star", t: "Découvrez votre score", d: "Chaque bourse reçoit un score selon votre profil, avec vos points forts et ce qui manque." },
   { n: "03", icon: "file", t: "Préparez votre dossier", d: "Conditions, documents à fournir, lien officiel, CV et lettre adaptés à la bourse." },
-  { n: "04", icon: "people", t: "Postulez, seul ou accompagné", d: "Vous envoyez vous-même, ou un expert vous aide à monter et vérifier le dossier." },
+  { n: "04", icon: "people", t: "Postulez, seul ou accompagné", d: "Vous envoyez vous-même, ou un expert prépare et dépose votre candidature." },
 ];
 
 const FAQ = [
-  { q: "La recherche est-elle gratuite ?", a: "Oui. Le questionnaire, le score, la liste des documents, le CV, la lettre et le suivi sont gratuits. Seul l'accompagnement par un conseiller est payant (Standard 15 000 F CFA, Premium 35 000 F CFA)." },
-  { q: "D'où viennent les bourses ?", a: "Elles sont collectées dans le monde entier sur les sites officiels (ministères, universités, fondations), puis vérifiées. Chaque fiche renvoie à la page d'origine, qui fait toujours foi." },
+  { q: "La recherche est-elle gratuite ?", a: "Oui. Le questionnaire, le score, les conditions, la liste des documents et le suivi sont gratuits. Votre premier dossier CV et lettre adaptés à une bourse est offert, ensuite l'abonnement est à 2 500 F CFA par mois. Si vous préférez qu'un expert dépose votre candidature : Standard 15 000 F CFA pour 1 bourse, Premium 35 000 F CFA pour 3 bourses." },
+  { q: "D'où viennent les bourses ?", a: "Elles sont collectées dans le monde entier sur les sites officiels (ministères, universités, fondations), puis vérifiées. Chaque fiche donne le lien officiel de candidature." },
   { q: "Que se passe-t-il quand une date limite est passée ?", a: "La bourse est signalée comme clôturée et, quand c'est possible, on indique la date attendue de la prochaine session. Les bourses qui ferment bientôt passent en tête." },
   { q: "Pourquoi créer un compte ?", a: "Pour voir votre score sur chaque bourse, enregistrer vos candidatures, recevoir les rappels de dates limites et demander un accompagnement." },
   { q: "Que devient mon profil ?", a: "Il sert uniquement au matching et à la préparation de vos documents. Il n'est jamais vendu, et vous pouvez supprimer votre compte à tout moment." },
@@ -35,7 +35,7 @@ export default async function Home() {
           <div className="lg:py-16">
             <Reveal>
               <span className="inline-flex items-center gap-2 rounded-full border border-line bg-card px-3 py-1 text-xs text-muted">
-                <span className="h-1.5 w-1.5 rounded-full bg-mint animate-pulse-dot" /> {t("Bourses, stages et conférences du monde entier")}
+                {t("Bourses, stages et conférences du monde entier")}
               </span>
             </Reveal>
             <Reveal delay={80}>

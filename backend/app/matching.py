@@ -97,6 +97,15 @@ class Criteria:
             out |= countries_in(r)
         return out
 
+    def strict_destination(self) -> set[str]:
+        """Pays qui comptent pour trier les résultats : les pays précis s'il y en a, sinon ceux des continents."""
+        if self.wished_countries:
+            return set(self.wished_countries)
+        out: set[str] = set()
+        for r in self.wished_regions:
+            out |= countries_in(r)
+        return out
+
     @classmethod
     def from_dict(cls, d: dict) -> "Criteria":
         return cls(

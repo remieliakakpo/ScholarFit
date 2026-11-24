@@ -4,27 +4,29 @@ import { useState } from "react";
 import Icon from "@/components/Icon";
 import { Credits, PayMethod, docApi } from "@/lib/docs";
 
-/** Bandeau : dossiers disponibles (CV + lettre adaptés à une bourse) et achat d'un nouveau dossier. */
+/** Bandeau : dossier offert, abonnement mensuel (dossiers restants sur la période) et souscription. */
 export function CreditsBar({ credits, onBuy, compact = false }: { credits: Credits; onBuy: () => void; compact?: boolean }) {
   const { t } = useT();
-  const offered = credits.used < credits.free_total;
+  const sub = credits.subscription;
   return (
     <div className={`card flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between ${compact ? "" : "sm:p-5"}`}>
       <div className="flex items-start gap-3">
         <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-brand-soft text-brand"><Icon name="file" className="h-5 w-5" /></span>
         <div>
           <p className="text-sm font-semibold">
-            {credits.available > 0
-              ? offered ? t("Votre premier dossier est offert") : (credits.available > 1 ? t("{n} dossiers disponibles", { n: credits.available }) : t("1 dossier disponible"))
-              : t("Dossier offert déjà utilisé")}
+            {credits.free_left > 0
+              ? t("Votre premier dossier est offert")
+              : sub.active
+                ? t("Abonnement actif jusqu'au {d} · {n} dossiers restants sur {m}", { d: sub.until_label, n: sub.left_this_period, m: sub.monthly_packs })
+                : t("Dossier offert déjà utilisé")}
           </p>
           <p className="text-xs text-muted sm:text-sm">
-            {t("Un dossier comprend le CV et la lettre adaptés à une bourse, avec {n} générations de chaque. Dossier suivant : {p}.", { n: credits.regenerations, p: credits.price_label })}
+            {t("Un dossier comprend le CV et la lettre adaptés à une bourse, avec {n} générations de chaque. Abonnement : {p}, jusqu'à {m} dossiers par mois.", { n: credits.regenerations, p: credits.price_label, m: sub.monthly_packs })}
             {credits.pending_orders > 0 && <span className="text-gold-dark"> {t("Paiement en cours de vérification.")}</span>}
           </p>
         </div>
       </div>
-      <button className="btn-ghost shrink-0" onClick={onBuy}>{t("Ajouter un dossier")}</button>
+      <button className="btn-ghost shrink-0" onClick={onBuy}>{sub.active ? t("Prolonger d'un mois") : t("S'abonner")}</button>
     </div>
   );
 }
@@ -58,15 +60,15 @@ export function PayModal({ credits, onClose, onDone }: { credits: Credits; onClo
       <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-3xl border border-line bg-card p-5 animate-pop-in sm:rounded-3xl sm:p-7" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="eyebrow">{t("Nouveau dossier")}</p>
-            <h2 id="pay-title" className="mt-1 text-xl sm:text-2xl">{t("CV et lettre pour une autre bourse")}</h2>
+            <p className="eyebrow">{t("Abonnement mensuel")}</p>
+            <h2 id="pay-title" className="mt-1 text-xl sm:text-2xl">{t("CV et lettres adaptés à {m} bourses par mois", { m: credits.subscription.monthly_packs })}</h2>
           </div>
           <button className="rounded-full p-2 text-muted hover:text-ink" onClick={onClose} aria-label={t("Fermer")}><Icon name="close" className="h-5 w-5" /></button>
         </div>
         {sent ? (
           <div className="mt-6 space-y-3 text-sm">
             <p className="flex items-center gap-2 font-semibold text-brand"><Icon name="check" className="h-5 w-5" /> {t("Paiement déclaré")}</p>
-            <p className="text-muted">{t("Notre équipe vérifie la réception et ajoute votre dossier, en général dans l'heure aux horaires ouvrables. Vous pourrez alors générer votre CV et votre lettre.")}</p>
+            <p className="text-muted">{t("Notre équipe vérifie la réception et active votre abonnement, en général dans l'heure aux horaires ouvrables. Vous pourrez alors générer vos CV et vos lettres.")}</p>
             <button className="btn-primary w-full" onClick={onClose}>{t("Compris")}</button>
           </div>
         ) : (
@@ -108,7 +110,7 @@ export function PayModal({ credits, onClose, onDone }: { credits: Credits; onClo
               </div>
             </div>
             {error && <p className="mt-3 text-sm text-danger">{error}</p>}
-            <button className="btn-primary mt-5 w-full" disabled={busy || (!reference.trim() && !phone.trim())} onClick={submit}>{busy ? t("Envoi…") : t("J'ai payé, ajouter mon dossier")}</button>
+            <button className="btn-primary mt-5 w-full" disabled={busy || (!reference.trim() && !phone.trim())} onClick={submit}>{busy ? t("Envoi…") : t("J'ai payé, activer mon abonnement")}</button>
           </>
         )}
       </div>

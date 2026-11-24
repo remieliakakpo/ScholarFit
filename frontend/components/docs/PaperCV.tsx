@@ -9,7 +9,7 @@ const ACCENT = "#1F3A5F";
 export default function PaperCV({ cv, editable, onChange }: { cv: CVData; editable: boolean; onChange: (cv: CVData) => void }) {
   const { t } = useT();
   const h = cv.header;
-  const centered = ["us_resume", "uk_cv", "ats"].includes(cv.format);
+  const centered = cv.layout !== "dated"; // modèle ATS : en-tête centré, comme le PDF
   const dated = cv.layout === "dated";
   const en = cv.language === "en";
   const setHeader = (k: keyof CVData["header"], v: string) => onChange({ ...cv, header: { ...h, [k]: v } });
@@ -25,7 +25,7 @@ export default function PaperCV({ cv, editable, onChange }: { cv: CVData; editab
     const e = cv.sections[si].entries[ei];
     setEntry(si, ei, { bullets: e.bullets.map((b, j) => (j === bi ? v : b)).filter((b) => b.trim()) });
   };
-  const contact = (["email", "phone", "location", "links"] as const).filter((k) => h[k] || editable);
+  const contact = (["location", "phone", "email", "links"] as const).filter((k) => h[k] || editable);
 
   const SectionTitle = ({ children }: { children: React.ReactNode }) => (
     <h3 className="mt-5 border-b pb-0.5 [font-family:inherit] text-[12.5px] font-bold uppercase tracking-[0.04em]" style={{ color: ACCENT, borderColor: ACCENT, fontFamily: "inherit", letterSpacing: "0.04em" }}>{children}</h3>
@@ -38,10 +38,10 @@ export default function PaperCV({ cv, editable, onChange }: { cv: CVData; editab
     >
       <header className={centered ? "text-center" : ""}>
         <Editable as="h2" editable={editable} value={h.name} onChange={(v) => setHeader("name", v)} placeholder={t("Nom complet")}
-          className="block text-[24px] font-bold leading-tight tracking-normal [font-family:inherit] text-[#111] sm:text-[27px]" />
+          className={`block text-[24px] font-bold leading-tight tracking-normal [font-family:inherit] text-[#111] sm:text-[27px] ${centered ? "uppercase" : ""}`} />
         {(h.headline || editable) && (
           <Editable as="p" editable={editable} value={h.headline} onChange={(v) => setHeader("headline", v)} placeholder={t("Titre du CV")}
-            className="mt-0.5 block text-[14px] text-[#1F3A5F] sm:text-[15px]" />
+            className="mt-0.5 block text-[13px] font-bold uppercase tracking-[0.02em] text-[#1F3A5F] sm:text-[14px]" />
         )}
         <p className={`mt-1.5 flex flex-wrap gap-x-2 gap-y-0.5 text-[12px] text-[#555] ${centered ? "justify-center" : ""}`}>
           {contact.map((k, i) => (
@@ -51,6 +51,10 @@ export default function PaperCV({ cv, editable, onChange }: { cv: CVData; editab
             </span>
           ))}
         </p>
+        {(h.objective || editable) && (
+          <Editable as="p" editable={editable} value={h.objective ?? ""} onChange={(v) => setHeader("objective", v)} placeholder={t("Candidature, rentrée et mobilité")}
+            className="block text-[12px] text-[#555]" />
+        )}
         {(h.birth_date || h.nationality) && (
           <p className={`text-[12px] text-[#555] ${centered ? "text-center" : ""}`}>
             {[h.birth_date && `${en ? "Date of birth" : "Date de naissance"} ${h.birth_date}`, h.nationality && `${en ? "Nationality" : "Nationalité"} ${h.nationality}`].filter(Boolean).join("  |  ")}
@@ -70,7 +74,12 @@ export default function PaperCV({ cv, editable, onChange }: { cv: CVData; editab
           <SectionTitle>{sec.title}</SectionTitle>
           {sec.kind === "list" ? (
             <div className="mt-1.5 space-y-0.5">
-              {sec.items.map((it, ii) => <Editable key={ii} as="p" editable={editable} value={it} onChange={(v) => setItem(si, ii, v)} className="block" />)}
+              {sec.items.map((it, ii) => {
+                const m = !editable && sec.key === "skills" ? /^([^:]{2,60}?)\s?:\s(.+)$/.exec(it) : null;
+                return m && m[1].split(" ").length <= 5
+                  ? <p key={ii}><strong>{m[1]} :</strong> {m[2]}</p>
+                  : <Editable key={ii} as="p" editable={editable} value={it} onChange={(v) => setItem(si, ii, v)} className="block" />;
+              })}
             </div>
           ) : (
             <div className="mt-2 space-y-3">
@@ -88,18 +97,28 @@ export default function PaperCV({ cv, editable, onChange }: { cv: CVData; editab
                   </ul>
                 ) : null;
                 const dates = <Editable as="p" editable={editable} value={e.dates} onChange={(v) => setEntry(si, ei, { dates: v })} placeholder={t("Dates")} className="block shrink-0 text-[#555]" />;
-                return dated ? (
-                  <div key={ei} className="grid grid-cols-[88px_1fr] gap-3 sm:grid-cols-[132px_1fr]">
-                    {dates}
-                    <div className="min-w-0">{title}{org}{bullets}</div>
-                  </div>
-                ) : (
-                  <div key={ei}>
-                    <div className="flex flex-wrap items-baseline justify-between gap-x-4">
-                      <div className="min-w-0 flex-1">{title}</div>
+                if (dated)
+                  return (
+                    <div key={ei} className="grid grid-cols-[88px_1fr] gap-3 sm:grid-cols-[132px_1fr]">
                       {dates}
+                      <div className="min-w-0">{title}{org}{bullets}</div>
                     </div>
-                    {org}{bullets}
+                  );
+                // Modèle ATS : « Poste | Organisme | Lieu » sur une ligne, dates à droite
+                const showHead = editable || e.title || e.organization || e.location || e.dates;
+                return (
+                  <div key={ei}>
+                    {showHead && (
+                      <div className="flex flex-wrap items-baseline justify-between gap-x-4">
+                        <p className="min-w-0 flex-1">
+                          <Editable editable={editable} value={e.title} onChange={(v) => setEntry(si, ei, { title: v })} placeholder={t("Poste ou diplôme")} className="font-bold" />
+                          {(e.organization || editable) && <> <span className="text-[#555]">|</span> <Editable editable={editable} value={e.organization} onChange={(v) => setEntry(si, ei, { organization: v })} placeholder={t("Établissement ou organisme")} /></>}
+                          {(e.location || editable) && <> <span className="text-[#555]">|</span> <Editable editable={editable} value={e.location} onChange={(v) => setEntry(si, ei, { location: v })} placeholder={t("Lieu")} /></>}
+                        </p>
+                        {dates}
+                      </div>
+                    )}
+                    {bullets}
                   </div>
                 );
               })}
