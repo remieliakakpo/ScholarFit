@@ -22,7 +22,7 @@ from ..models import Profile, Scholarship, User
 from ..schemas import MatchOut
 from ..security import optional_user
 from ..serializers import match_out
-from ..vocab import COUNTRIES, DOMAINS, LEVEL_ORDER, LEVELS
+from ..vocab import COUNTRIES, DOMAINS, LEVEL_ORDER, LEVELS, KIND_OR_ALL_PATTERN
 
 router = APIRouter(prefix="/api", tags=["questionnaire et offres"])
 
@@ -230,7 +230,7 @@ def questionnaire():
 
 
 @router.post("/questionnaire", response_model=QuestionnaireOut)
-def submit(body: QuestionnaireIn, kind: str = Query("bourse", pattern="^(bourse|stage|conference|tout)$"), user: User | None = Depends(optional_user), db: Session = Depends(get_db)):
+def submit(body: QuestionnaireIn, kind: str = Query("bourse", pattern=KIND_OR_ALL_PATTERN), user: User | None = Depends(optional_user), db: Session = Depends(get_db)):
     data = _clean(body.answers)
     today = date.today()
     if user is not None:
@@ -252,7 +252,12 @@ def submit(body: QuestionnaireIn, kind: str = Query("bourse", pattern="^(bourse|
             languages=list(data["languages"]), project_text=data.get("project", ""),
             full_funding_only=data["full_funding_only"], situations=data["situations"],
         )
-    stmt = select(Scholarship) if kind == "tout" else select(Scholarship).where(Scholarship.kind == kind)
+    from ..site_settings import enabled_kinds
+
+    shown = enabled_kinds(db)
+    stmt = select(Scholarship).where(Scholarship.kind.in_(shown))
+    if kind != "tout":
+        stmt = stmt.where(Scholarship.kind == kind)
     results, excluded = rank(list(db.scalars(stmt)), c, today, limit=500)
     dest = c.strict_destination()
     items = [match_out(m) for m in results]

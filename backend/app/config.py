@@ -69,6 +69,10 @@ class Settings(BaseSettings):
     extract_provider: str = "claude"  # claude | ollama
     ollama_url: str = "http://localhost:11434"
     ollama_model: str = "mistral"
+    # Fichiers envoyés par les utilisateurs (preuves de paiement), hors du site public. Relatif au
+    # dossier backend/ ; en Docker, monter un volume dessus pour ne pas les perdre.
+    upload_dir: str = "uploads"
+
     # Collecte : travaux d'IA sans personne qui attend (extraction, mise en forme, traduction)
     # envoyés par lots (Batch API, moitié prix, réponse en moins de 24 h). false = appels immédiats.
     ai_use_batch: bool = True

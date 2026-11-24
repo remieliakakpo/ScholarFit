@@ -1,13 +1,15 @@
 """CV, lettres de motivation, compatibilité avec une bourse, dossiers et exports."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import Response
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .. import credits, export
+from .. import credits, export, proofs
 from ..ai.cv import build_cv, cv_plain_text, diagnose
 from ..ai.fit import fit_check
 from ..ai.formats import document_language, letter_style
@@ -258,7 +260,39 @@ def new_order(body: OrderIn, user: User = Depends(verified_user), db: Session = 
 def _order_out(o: CreditOrder) -> dict:
     return {"id": o.id, "amount": o.amount, "currency": o.currency, "method": o.method, "reference": o.reference,
             "payer_phone": o.payer_phone, "status": o.status, "status_label": credits.ORDER_STATUSES.get(o.status, o.status),
-            "created_at": o.created_at.isoformat() if o.created_at else None, "email": o.user.email if o.user else None}
+            "created_at": o.created_at.isoformat() if o.created_at else None, "email": o.user.email if o.user else None,
+            "has_proof": bool(o.proof_path)}
+
+
+@router.post("/credits/orders/{order_id}/preuve")
+async def upload_proof(order_id: int, file: UploadFile = File(...), user: User = Depends(verified_user),
+                       db: Session = Depends(get_db)):
+    """Capture d'écran ou photo du reçu de paiement, pour que l'administrateur valide plus vite."""
+    o = db.get(CreditOrder, order_id)
+    if not o or o.user_id != user.id:
+        raise HTTPException(404, t("Commande introuvable", "Order not found"))
+    if o.status != "en_verification":
+        raise HTTPException(409, t("Ce paiement a déjà été traité", "This payment has already been processed"))
+    data = await file.read(proofs.MAX_BYTES + 1)
+    rel = proofs.save_proof(data)
+    old = o.proof_path
+    o.proof_path, o.proof_uploaded_at = rel, datetime.now(timezone.utc)
+    db.commit()
+    proofs.delete_proof(old)  # une seule preuve par paiement : la nouvelle remplace l'ancienne
+    return _order_out(o)
+
+
+@router.get("/credits/orders/{order_id}/preuve")
+def view_proof(order_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    o = db.get(CreditOrder, order_id)
+    if not o or (o.user_id != user.id and not user.is_admin) or not o.proof_path:
+        raise HTTPException(404, t("Preuve introuvable", "Proof not found"))
+    path = proofs.proof_path(o.proof_path)
+    if not path.is_file():
+        raise HTTPException(404, t("Preuve introuvable", "Proof not found"))
+    return FileResponse(path, media_type="image/jpeg",
+                        headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff",
+                                 "Content-Disposition": f'inline; filename="preuve-{o.id}.jpg"'})
 
 
 @router.get("/admin/credit-orders")

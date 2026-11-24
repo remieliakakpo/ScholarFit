@@ -215,6 +215,11 @@ def delete_account(request: Request, response: Response, user: User = Depends(cu
         for c in user.advisor.coachings:
             if c.status == "en_cours":
                 c.status = "demande"
+    from .. import proofs
+
+    proof_files = [o.proof_path for o in user.credit_orders if o.proof_path]
     db.delete(user)
     db.commit()
+    for rel in proof_files:  # captures de reçus effacées avec le compte
+        proofs.delete_proof(rel)
     clear_session_cookie(response)

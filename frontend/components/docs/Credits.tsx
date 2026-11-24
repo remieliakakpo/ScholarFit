@@ -3,6 +3,7 @@ import { useT } from "@/components/LangProvider";
 import { useState } from "react";
 import Icon from "@/components/Icon";
 import { Credits, PayMethod, docApi } from "@/lib/docs";
+import { api } from "@/lib/api";
 
 /** Bandeau : dossier offert, abonnement mensuel (dossiers restants sur la période) et souscription. */
 export function CreditsBar({ credits, onBuy, compact = false }: { credits: Credits; onBuy: () => void; compact?: boolean }) {
@@ -40,12 +41,29 @@ export function PayModal({ credits, onClose, onDone }: { credits: Credits; onClo
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [proof, setProof] = useState<File | null>(null);
+  const [orderId, setOrderId] = useState<number | null>(null);
+
+  function pickProof(f: File | null) {
+    setError(null);
+    if (f && f.size > 5 * 1024 * 1024) {
+      setError(t("Image trop lourde (5 Mo maximum)"));
+      f = null;
+    }
+    setProof(f);
+  }
 
   async function submit() {
+    if (!proof) return;
     setBusy(true);
     setError(null);
     try {
-      await docApi("/api/credits/orders", { method: "POST", body: JSON.stringify({ method: method.code, reference, payer_phone: phone }) });
+      // Commande créée une seule fois : si l'envoi de la capture échoue, on la renvoie sur la même commande
+      const id = orderId ?? (await docApi<{ id: number }>("/api/credits/orders", { method: "POST", body: JSON.stringify({ method: method.code, reference, payer_phone: phone }) })).id;
+      setOrderId(id);
+      const form = new FormData();
+      form.append("file", proof);
+      await api(`/api/credits/orders/${id}/preuve`, { method: "POST", body: form });
       setSent(true);
       onDone();
     } catch (e) {
@@ -109,8 +127,19 @@ export function PayModal({ credits, onClose, onDone }: { credits: Credits; onClo
                 <input id="pay-phone" className="input" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+228 …" />
               </div>
             </div>
+            <div className="mt-4">
+              <label className="label" htmlFor="pay-proof">{t("Preuve de paiement")}</label>
+              <label htmlFor="pay-proof" className={`flex cursor-pointer items-center gap-3 rounded-2xl border border-dashed p-3 text-sm transition hover:border-brand/60 ${proof ? "border-brand bg-brand-soft/40" : "border-line"}`}>
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-surface text-brand"><Icon name={proof ? "check" : "file"} className="h-5 w-5" /></span>
+                <span className="min-w-0">
+                  <span className="block truncate font-medium">{proof ? proof.name : t("Ajouter la capture d'écran du reçu")}</span>
+                  <span className="block text-xs text-muted">{t("Le SMS ou l'écran de confirmation du paiement. JPEG, PNG ou WebP, 5 Mo maximum.")}</span>
+                </span>
+              </label>
+              <input id="pay-proof" type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={(e) => pickProof(e.target.files?.[0] ?? null)} />
+            </div>
             {error && <p className="mt-3 text-sm text-danger">{error}</p>}
-            <button className="btn-primary mt-5 w-full" disabled={busy || (!reference.trim() && !phone.trim())} onClick={submit}>{busy ? t("Envoi…") : t("J'ai payé, activer mon abonnement")}</button>
+            <button className="btn-primary mt-5 w-full" disabled={busy || !proof || (!reference.trim() && !phone.trim())} onClick={submit}>{busy ? t("Envoi…") : t("J'ai payé, activer mon abonnement")}</button>
           </>
         )}
       </div>

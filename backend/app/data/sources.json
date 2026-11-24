@@ -82,9 +82,9 @@
     "connector": "site",
     "limit": 60,
     "frequency_hours": 168,
-    "enabled": false,
+    "enabled": true,
     "kind": "conference",
-    "note": "Annuaire de conférences académiques. Désactivé : très volumineux, à filtrer par domaine avant d'activer (paramètre paths).",
+    "note": "Annuaire de conférences académiques. Activé : très volumineux ; filtrer par domaine (paramètre paths) si besoin.",
     "feed_pages": 3
   },
   {
@@ -170,6 +170,52 @@
     "kind": "bourse"
   },
   {
+    "name": "Opportunities Corners",
+    "url": "https://opportunitiescorners.com",
+    "method": "page",
+    "connector": "site",
+    "limit": 80,
+    "frequency_hours": 168,
+    "enabled": true,
+    "note": "Bourses, stages, conférences, formations, concours, programmes d'échange, fellowships et cours en ligne. Lu par catégorie (un flux par type) : les guides de visa, conseils et articles de blog ne sont pas lus.",
+    "feed_pages": 2,
+    "feeds": [
+      {
+        "url": "https://opportunitiescorners.com/category/bachelor-master-phd-scholarships/feed/",
+        "kind": "bourse"
+      },
+      {
+        "url": "https://opportunitiescorners.com/category/internships/feed/",
+        "kind": "stage"
+      },
+      {
+        "url": "https://opportunitiescorners.com/category/conferences/feed/",
+        "kind": "conference"
+      },
+      {
+        "url": "https://opportunitiescorners.com/category/trainings/feed/",
+        "kind": "formation"
+      },
+      {
+        "url": "https://opportunitiescorners.com/category/competitions/feed/",
+        "kind": "concours"
+      },
+      {
+        "url": "https://opportunitiescorners.com/category/exchange-programs/feed/",
+        "kind": "echange"
+      },
+      {
+        "url": "https://opportunitiescorners.com/category/fellowships/feed/",
+        "kind": "fellowship"
+      },
+      {
+        "url": "https://opportunitiescorners.com/category/online-courses/feed/",
+        "kind": "cours_en_ligne"
+      }
+    ],
+    "exclude_pattern": "(visa|study-permit|tips|guide|how-to|jobs?\\b)"
+  },
+  {
     "name": "ReliefWeb (stages ONU, ONG, organisations internationales)",
     "url": "https://api.reliefweb.int",
     "method": "api",
@@ -186,7 +232,7 @@
     "method": "rss",
     "connector": "rss",
     "limit": 20,
-    "enabled": false,
+    "enabled": true,
     "note": "Exemple de connecteur RSS. Vérifier l'URL exacte du flux et les conditions d'utilisation avant d'activer."
   },
   {
@@ -197,7 +243,7 @@
     "link_selector": "a",
     "link_pattern": "/fr/.*bourse",
     "limit": 20,
-    "enabled": false,
+    "enabled": true,
     "note": "Exemple de connecteur liste + fiches. Lire robots.txt et les CGU, et privilégier un partenariat."
   }
 ]

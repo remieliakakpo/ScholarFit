@@ -76,7 +76,7 @@ async def security_middleware(request: Request, call_next):
     if request.method in UNSAFE and request.url.path.startswith("/api/") and not request.headers.get("x-requested-with"):
         return JSONResponse({"detail": "En-tête X-Requested-With manquant (protection CSRF)"}, status_code=403)
     if request.method in UNSAFE:
-        limit = UPLOAD_LIMIT if request.url.path == "/api/profile/cv" else int(settings.max_request_mb * 1024 * 1024)
+        limit = UPLOAD_LIMIT if (request.url.path == "/api/profile/cv" or request.url.path.endswith("/preuve")) else int(settings.max_request_mb * 1024 * 1024)
         try:
             size = int(request.headers.get("content-length") or 0)
         except ValueError:

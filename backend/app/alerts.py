@@ -46,7 +46,10 @@ def run_alerts(db: Session, today: date | None = None, new_since_days: int = 7) 
     today = today or date.today()
     since = datetime.now(timezone.utc) - timedelta(days=new_since_days)
     created = 0
-    scholarships = list(db.scalars(select(Scholarship).where(Scholarship.status != "expiree")))
+    from .site_settings import enabled_kinds
+
+    shown = enabled_kinds(db)
+    scholarships = list(db.scalars(select(Scholarship).where(Scholarship.status != "expiree", Scholarship.kind.in_(shown))))
     for user in db.scalars(select(User)):
         token = i18n.set_lang(user.lang or "fr")  # messages dans la langue choisie sur le site
         try:
@@ -107,7 +110,9 @@ def _saved_search_alerts(db: Session, user: User, today: date) -> int:
                 except ValueError:
                     filters.pop(k)
         try:
-            items, _ = search(db, today=today, extra_where=Scholarship.collected_at >= since, **filters)
+            from .site_settings import enabled_kinds
+
+            items, _ = search(db, today=today, extra_where=Scholarship.collected_at >= since, enabled=enabled_kinds(db), **filters)
         except TypeError:  # filtre enregistré illisible : on l'ignore plutôt que de bloquer les autres
             items = []
         for s in items[:10]:

@@ -14,7 +14,7 @@ from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
 
 from ..ai.client import ask_json
-from ..vocab import DOMAINS, LEVELS
+from ..vocab import DOMAINS, KINDS, LEVELS
 
 MONTHS_FR = {
     "janvier": 1, "février": 2, "fevrier": 2, "mars": 3, "avril": 4, "mai": 5, "juin": 6, "juillet": 7,
@@ -154,7 +154,7 @@ EXTRACT_SCHEMA = {
             "required": ["deadline", "eligibility", "funding"],
             "additionalProperties": False,
         },
-        "kind": {"type": "string", "enum": ["bourse", "stage", "conference"]},
+        "kind": {"type": "string", "enum": list(KINDS)},
         "title": {"type": "string"},
         "official_link": {"type": ["string", "null"]},
         "event_start": {"type": ["string", "null"]},
@@ -187,9 +187,12 @@ EXTRACT_SCHEMA = {
 }
 
 EXTRACT_SYSTEM = """Tu transformes le texte d'une page web en fiche d'opportunité pour étudiants. Réponds uniquement avec le JSON.
-- is_scholarship = false si la page ne décrit pas UNE opportunité précise (bourse, stage ou conférence).
-  Une offre d'emploi (CDI, CDD, recrutement) n'en est pas une : is_scholarship = false.
-- kind : bourse (financement d'études), stage (stage, internship, traineeship) ou conference (conférence, sommet, forum, colloque).
+- is_scholarship = false si la page ne décrit pas UNE opportunité précise pour étudiants ou jeunes diplômés.
+  Une offre d'emploi (CDI, CDD, recrutement), un guide (visa, conseils) ou un article de blog n'en sont pas : is_scholarship = false.
+- kind : bourse (financement d'études), stage (stage, internship, traineeship), conference (conférence, sommet,
+  forum, colloque), formation (formation courte, atelier, bootcamp, training), concours (concours, compétition,
+  prix, hackathon, challenge), echange (programme d'échange, école d'été, camp, mobilité), fellowship
+  (fellowship, programme de leadership ou de recherche rémunéré), cours_en_ligne (cours en ligne, MOOC, certificat en ligne).
 - official_link : adresse complète du site officiel de l'organisme cité dans la page (lien « postuler », « site officiel »), null sinon.
 - event_start, event_end : dates de la conférence ou du stage (AAAA-MM-JJ), null si absentes. city : ville. remote : en ligne possible.
 - duration : durée du stage en clair (ex. « 3 à 6 mois »). eligibility, application_steps : phrases courtes en français, avec tes mots.
