@@ -13,6 +13,17 @@ from .routers import admin, ai, applications, auth, chat, coaching, payments, pr
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 settings = get_settings()
 
+if settings.sentry_dsn:
+    # Suivi des erreurs en ligne : chaque erreur 500 est envoyée à Sentry avec sa pile d'appels
+    # (paquet facultatif « sentry-sdk », listé dans requirements.txt).
+    try:
+        import sentry_sdk
+
+        sentry_sdk.init(dsn=settings.sentry_dsn, traces_sample_rate=0.0, send_default_pii=False,
+                        environment="production" if settings.is_production else "local")
+    except ImportError:  # pragma: no cover
+        logging.getLogger("scholarfit").warning("SENTRY_DSN défini mais le paquet sentry-sdk n'est pas installé.")
+
 
 
 def _load_translations() -> None:
@@ -31,8 +42,6 @@ def _load_translations() -> None:
 
 def _demo_accounts() -> None:
     """Identifiants du README toujours valables, même si « app.cli seed » n'a pas été lancé."""
-    if not settings.demo_accounts:
-        return
     from .db import SessionLocal
     from .demo import ensure_demo_accounts
 
@@ -79,6 +88,10 @@ app.include_router(coaching.admin_router)
 app.include_router(payments.admin_router)
 
 
+API_VERSION = "2026-11-27b"
+
+
 @app.get("/api/health")
 def health():
-    return {"ok": True, "ia": "claude" if settings.ai_enabled else "hors-ligne (règles)", "modele": settings.claude_model if settings.ai_enabled else None}
+    # "version" permet de vérifier en ligne (https://…railway.app/api/health) que Railway tourne bien le dernier code.
+    return {"ok": True, "version": API_VERSION, "ia": "claude" if settings.ai_enabled else "hors-ligne (règles)", "modele": settings.claude_model if settings.ai_enabled else None}

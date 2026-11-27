@@ -7,7 +7,7 @@ import ScholarshipCard from "@/components/ScholarshipCard";
 import { AlertItem, Match, Meta, api, getMeta } from "@/lib/api";
 import { useT } from "@/components/LangProvider";
 
-type MatchesOut = { minimum_ok: boolean; missing_minimum: string[]; excluded_count: number; items: Match[] };
+type MatchesOut = { minimum_ok: boolean; missing_minimum: string[]; excluded_count: number; items: Match[]; next_session?: Match[]; widen_hint?: string | null };
 
 function Matches() {
   const { t } = useT();
@@ -18,9 +18,11 @@ function Matches() {
   const [chance, setChance] = useState("");
 
   useEffect(() => {
-    getMeta().then(setMeta);
-    api<MatchesOut>("/api/matches").then(setData).catch((e) => setError(e.message));
-    api<AlertItem[]>("/api/alerts").then(setAlerts).catch(() => {});
+    getMeta().then(setMeta).catch(() => {});
+    api<MatchesOut>("/api/matches")
+      .then((d) => setData({ ...d, minimum_ok: !!d?.minimum_ok, missing_minimum: Array.isArray(d?.missing_minimum) ? d.missing_minimum : [], items: Array.isArray(d?.items) ? d.items : [] }))
+      .catch((e) => setError(e.message));
+    api<AlertItem[]>("/api/alerts").then((a) => setAlerts(Array.isArray(a) ? a : [])).catch(() => {});
   }, []);
 
   if (error) return <p className="text-danger">{error}</p>;
@@ -57,6 +59,15 @@ function Matches() {
           {items.map((m) => <ScholarshipCard key={m.scholarship.id} s={m.scholarship} match={m} meta={meta} loggedIn />)}
           {items.length === 0 && <p className="card p-6 text-center text-sm text-muted">{t("Aucune bourse dans cette catégorie.")}</p>}
         </div>
+        {data.widen_hint && <p className="rounded-2xl border border-line bg-surface p-4 text-sm text-muted"><Icon name="bolt" className="mr-1.5 inline h-4 w-4 text-gold" />{data.widen_hint}</p>}
+        {Array.isArray(data.next_session) && data.next_session.length > 0 && (
+          <section className="pt-4">
+            <p className="eyebrow">{t("Prochaine session")}</p>
+            <h2 className="mt-2 text-xl sm:text-2xl">{t("À préparer pour la prochaine session")}</h2>
+            <p className="mt-1 text-sm text-muted">{t("Ces bourses reviennent chaque année et correspondent à votre profil, mais leur session est close. Préparez votre dossier dès maintenant pour être prêt à l'ouverture.")}</p>
+            <div className="mt-4 space-y-4">{data.next_session.map((m) => <ScholarshipCard key={`n${m.scholarship.id}`} s={m.scholarship} match={m} meta={meta} loggedIn />)}</div>
+          </section>
+        )}
       </div>
 
       <aside className="space-y-4">

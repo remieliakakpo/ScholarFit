@@ -939,6 +939,22 @@ const EN: Record<string, string> = {
   "Aller à mon espace": "Go to my space",
   "Confirmation de": "Confirming",
   "votre e-mail": "your email",
+  // Version définitive (2026-11-27)
+  "Centres d'intérêt": "Interests",
+  "Ex. robotique éducative, football, lecture d'essais économiques": "E.g. educational robotics, football, reading economics essays",
+  "Années d'expérience professionnelle (stages et emplois)": "Years of work experience (internships and jobs)",
+  "Attendue vers {month} (à confirmer)": "Expected around {month} (to be confirmed)",
+  "Attendue vers {month}": "Expected around {month}",
+  "Prochaine session": "Next round",
+  "À préparer pour la prochaine session": "To prepare for the next round",
+  "Ces bourses reviennent chaque année et correspondent à votre profil, mais leur session est close. Préparez votre dossier dès maintenant pour être prêt à l'ouverture.": "These scholarships come back every year and match your profile, but this round is closed. Start your application now so you are ready when it opens.",
+  "Créez votre compte gratuit": "Create your free account",
+  "pour voir votre score de compatibilité sur chaque bourse et ce qu'il vous manque.": "to see your match score for each scholarship and what you are missing.",
+  "Votre situation pour cette bourse": "Your situation for this scholarship",
+  "Remplie": "Met",
+  "Non remplie": "Not met",
+  "À compléter": "To complete",
+  "Le lien est peut-être ancien ou la bourse a été retirée.": "The link may be out of date, or the scholarship has been removed.",
 };
 
 export default EN;

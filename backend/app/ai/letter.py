@@ -21,7 +21,7 @@ from datetime import date
 from ..i18n import is_en, t
 from ..models import Profile, Scholarship
 from ..vocab import DOMAINS
-from . import writing
+from . import style, writing
 from .client import ask_json
 from .cv import ACTION_VERBS_EN, ACTION_VERBS_FR, EN_MONTHS, FR_MONTHS, THEMES, _clean_line, _object_after, apply_weak_start, detect_themes
 from .documents import split_sections
@@ -336,7 +336,7 @@ def cv_story(p: Profile, s: Scholarship, language: str, today: date) -> dict:
     built = build_cv_rules(p.cv_text, p, s, None, today=today)
     secs = {sec["key"]: sec for sec in built["sections"]}
     en = language == "en"
-    out: dict[str, list[str]] = {"education": [], "experience": [], "skills": []}
+    out: dict[str, list[str]] = {"education": [], "experience": [], "skills": [], "mention": []}
 
     edus = sorted((secs.get("education") or {}).get("entries", []), key=lambda e: (parse_range(e["dates"])["ey"] or 0), reverse=True)
     for i, e in enumerate(edus[:2]):
@@ -360,9 +360,15 @@ def cv_story(p: Profile, s: Scholarship, language: str, today: date) -> dict:
         else:
             un = "un" if cross and not diploma_noun(e["title"], "fr").startswith("licence") else _un(title)
             fem = un == "une"
+            if not cross:
+                title = style.smart_lower(title)
+            mention = next((re.sub(r"\s*\([^)]*\)", "", b).strip() for b in e.get("bullets", []) if b.lower().startswith("mention")), "")
             if i == 0:
                 if _finished(r, today):
-                    out["education"].append(f"Je suis titulaire d'{un} {title}" + (f" {de_institution(org)}" if org else "") + (f", obtenu{'e' if fem else ''} en {r['ey']}." if r["ey"] else "."))
+                    got = f", obtenu{'e' if fem else ''}" + (f" en {r['ey']}" if r["ey"] else "") + (f" avec la {writing.lower_first(mention)}" if mention else "")
+                    out["education"].append(f"Je suis titulaire d'{un} {title}" + (f" {de_institution(org)}" if org else "") + (got + "." if (r["ey"] or mention) else "."))
+                    if mention:
+                        out["mention"] = [mention]
                 else:
                     out["education"].append(f"Je prépare actuellement {un} {title}" + (f" {at_institution(org.split(' / ')[0], 'fr')}" if org else "") + (f", que j'achèverai en {r['ey']}." if r["ey"] else "."))
             else:
@@ -404,14 +410,14 @@ def cv_story(p: Profile, s: Scholarship, language: str, today: date) -> dict:
             out["experience"].append(sent)
             continue
         role, kind = _role_fr(title)
-        chez = f" chez {org}" if org else ""
-        place = _place_fr(e.get("location", ""))
+        chez = f" {style.at_org_fr(org)}" if org else ""
+        place = _place_fr(e.get("location", "")) if not re.search(r",\s*\S", org or "") else ""
         start, end = _when(r["sm"], r["sy"], "fr"), _when(r["em"], r["ey"], "fr")
         de = (lambda w: f"d'{w}" if w[:1] in "aeiouéèêh" else f"de {w}")
         if kind == "stage":
             core = f"j'ai effectué {role}{chez}{place}"
         else:
-            core = f"j'ai occupé le poste de {role}{chez}{place}" if _finished(r, today) else f"je travaille comme {role}{chez}{place}"
+            core = f"j'ai occupé le poste {de(role)}{chez}{place}" if _finished(r, today) else f"je travaille comme {role}{chez}{place}"
         if _finished(r, today) and start and end and start != end:
             sent = f"{_span(r, 'fr', today)}{core}."
         elif not _finished(r, today) and start:
@@ -435,11 +441,16 @@ def cv_story(p: Profile, s: Scholarship, language: str, today: date) -> dict:
     if skills_sec:
         from .cv import _skill_keywords
 
-        keys = _skill_keywords(secs, 6)
+        keys = [re.sub(r"\s*\([^)]*\)", "", k).strip() for k in _skill_keywords(secs, 8)]
+        fields = [k for k in keys if len(k.split()) > 1 and k.split()[1][:1].islower()]
+        keys = [k for k in keys if k not in fields][:5]
         if cross:
             keys = [k for k in keys if re.match(r"^[A-Z0-9]", k) and writing.detect_language(k) is None and not re.search(r"\b(de|des|et|du|la|le|of|and|the)\b", k)][:5]
         if len(keys) >= 3:
-            out["skills"].append(("I am proficient in " if en else "Je maîtrise notamment ") + _join_actions_raw(keys, language) + ".")
+            sent = ("I am proficient in " if en else "Je maîtrise notamment ") + _join_actions_raw(keys, language)
+            if fields and not cross and not en:
+                sent += ", et j'ai acquis des compétences en " + " et en ".join(writing.lower_first(f) for f in fields[:2])
+            out["skills"].append(sent + ".")
     return out
 
 
@@ -494,10 +505,18 @@ def _overlap(a: str, b: str) -> float:
     return len(wa & wb) / len(wa) if wa else 0.0
 
 
+_ACRONYM_ARTICLE = {"DAAD": "le ", "AUF": "l'", "OIF": "l'", "USAID": "l'", "BAD": "la ", "BOAD": "la ", "JICA": "la ", "KOICA": "la ",
+                    "CEDEAO": "la ", "UEMOA": "l'", "OMS": "l'", "UNESCO": "l'", "PNUD": "le ", "IRD": "l'", "CNRS": "le ", "ARES": "l'",
+                    "VLIR-UOS": "le ", "DFID": "le ", "FCDO": "le ", "CSC": "le ", "TWAS": "la ", "ICTP": "l'", "AIMS": "l'"}
+
+
 def par_org(org: str) -> str:
     """« par le Gouvernement du Royaume-Uni », « par la Fondation Mastercard », « par l'Agence universitaire », « par Campus France »."""
-    o = (org or "").strip()
+    o = (org or "").strip().split(" / ")[0].strip()
     first = o.split(" ")[0].lower() if o else ""
+    acr = _ACRONYM_ARTICLE.get(o.upper()) if o.isupper() else None
+    if acr:
+        return f"par {acr}{o}"
     if first in ("gouvernement", "ministère", "département", "conseil", "programme", "fonds", "service", "centre", "réseau", "consortium", "bureau", "secrétariat"):
         return f"par le {o}"
     if first in ("fondation", "banque", "commission", "confédération", "région", "république", "fédération", "communauté", "coopération", "délégation"):
@@ -553,6 +572,8 @@ def letter_template(p: Profile, s: Scholarship, answers: dict, language: str, ma
     # 1. Objet de la lettre
     if en:
         org = s.organization if s.organization and not _FR_ORG.search(s.organization) else ""
+        if org and org.split(" / ")[0].strip().lower() in (s.title or "").lower():
+            org = ""
         p1 = f"I am applying for {bourse_name_en(s)}" + (f", offered by {org}," if org else "")
         if target:
             p1 += f" to pursue {target}" + (f" in {domain}" if domain else "")
@@ -562,7 +583,11 @@ def letter_template(p: Profile, s: Scholarship, answers: dict, language: str, ma
         if program:
             p1 += f" The programme I am aiming for is {program}."
     else:
-        p1 = f"Je vous adresse ma candidature {a_bourse_fr(s)}, {offered_fr(s)} {par_org(s.organization)}"
+        org_main = (s.organization or "").split(" / ")[0].strip()
+        if org_main and org_main.lower() in (s.title or "").lower():
+            p1 = f"Je vous adresse ma candidature {a_bourse_fr(s)}"
+        else:
+            p1 = f"Je vous adresse ma candidature {a_bourse_fr(s)}, {offered_fr(s)} {par_org(s.organization)}"
         if target:
             p1 += f", pour préparer {target}" + (f" en {domain}" if domain else "")
         if where_fr:
@@ -579,7 +604,7 @@ def letter_template(p: Profile, s: Scholarship, answers: dict, language: str, ma
             parts.append(f"I am currently completing {current or 'my studies'}" + (f" in {domain}" if domain else "") + (f" {at_institution(p.institution, 'en')}" if p.institution else "") + ".")
         else:
             parts.append(f"Je poursuis actuellement {current or 'mes études'}" + (f" en {domain}" if domain else "") + (f" {at_institution(p.institution, 'fr')}" if p.institution else "") + ".")
-    if p.grade_average is not None:
+    if p.grade_average is not None and not story.get("mention"):
         parts.append(f"My average grade is {_num(p.grade_average, 'en')} out of 20." if en else f"Ma moyenne générale est de {_num(p.grade_average, 'fr')} sur 20.")
     if parts:
         paragraphs.append(" ".join(parts))
@@ -592,7 +617,18 @@ def letter_template(p: Profile, s: Scholarship, answers: dict, language: str, ma
         if sep and proud_raw and _overlap(detail, proud_raw) >= 0.5:
             sent = head
         exp_sents.append(sent)
-    parts = exp_sents + list(story.get("skills", []))
+    # Réalisation marquante, racontée dans le même paragraphe que l'expérience
+    proud = writing.first_person(proud_raw, "J'ai", "I", language)
+    proud_sent = ""
+    if proud:
+        if not en and re.match(r"^j'ai\s", proud, re.I):
+            proud_sent = writing.complete_sentence("Une réalisation compte particulièrement pour moi : " + writing.lower_first(proud).rstrip("."))
+        elif en and re.match(r"^i\s", proud):
+            proud_sent = writing.complete_sentence("One achievement matters most to me: " + proud.rstrip("."))
+        else:
+            lead = "One experience shaped this application more than any other." if en else "Une expérience a particulièrement orienté ce projet."
+            proud_sent = f"{lead} {proud}"
+    parts = exp_sents + ([proud_sent] if proud_sent else []) + list(story.get("skills", []))
     if not story:
         highlights = cv_highlights(p.cv_text, language) if not p.cv_text or writing.detect_language(p.cv_text) in (None, language) else []
         if highlights:
@@ -600,15 +636,16 @@ def letter_template(p: Profile, s: Scholarship, answers: dict, language: str, ma
     if parts:
         paragraphs.append(" ".join(parts))
 
-    # 4. Réalisation marquante
-    proud = writing.first_person(proud_raw, "J'ai", "I", language)
-    if proud:
-        lead = "One experience shaped this application more than any other." if en else "Une expérience a particulièrement orienté ce projet."
-        paragraphs.append(f"{lead} {proud}")
-
     # 5. Pourquoi ce pays, ce programme, plan d'études
     parts = []
     why_country = ans("why_country")
+    if why_country and countries:
+        from ..vocab import COUNTRIES as _C
+        others = [n for c, n in _C.items() if c not in countries and len(n) > 3 and re.search(rf"\b{re.escape(n)}\b", why_country, re.I)]
+        if others:
+            notes.append(t(f"Votre réponse « pourquoi ce pays » parle de {others[0]}, alors que cette bourse finance des études {where_fr or 'dans un autre pays'} : elle n'a pas été reprise. Réécrivez-la pour cette destination.",
+                           f"Your answer on why this country mentions {others[0]}, but this scholarship funds studies {where_en or 'in another country'}, so it was left out. Rewrite it for this destination."))
+            why_country = ""
     if why_country:
         if en:
             parts.append(_integrate(why_country, f"Studying {where_en} is a deliberate choice." if where_en else "", (f"I have chosen to study {where_en}" if where_en else "I have chosen this destination"), "en"))
@@ -629,8 +666,10 @@ def letter_template(p: Profile, s: Scholarship, answers: dict, language: str, ma
         skipped.append("project")
     if project_after and profile_project and profile_project.strip().lower()[:30] != project_after.lower()[:30]:
         parts.append(writing.first_person(profile_project, "Je souhaite", "I want to", language))
+    motivation_idx = None
     if parts:
         paragraphs.append(" ".join(x for x in parts if x))
+        motivation_idx = len(paragraphs) - 1
 
     # 6. Projet après les études
     after = project_after or profile_project or ""
@@ -653,6 +692,10 @@ def letter_template(p: Profile, s: Scholarship, answers: dict, language: str, ma
         themes = detect_themes(s)
         if "retour" in themes or "communaute" in themes:
             paragraphs[-1] += " This project is directly in line with the purpose of this scholarship." if en else " Ce projet rejoint directement la vocation de cette bourse."
+        # Un paragraphe de deux lignes isolé fait « formulaire » : on le joint à la motivation s'ils restent courts
+        if motivation_idx is not None and motivation_idx == len(paragraphs) - 2 and len((paragraphs[-2] + " " + paragraphs[-1]).split()) <= 120:
+            last = paragraphs.pop()
+            paragraphs[-1] = paragraphs[-1] + " " + last
 
     extra = writing.as_sentences(ans("extra"))
     if extra:
@@ -742,7 +785,39 @@ Règles de forme :
   accords ; si le genre n'est pas indiqué, tournez les phrases pour éviter tout accord genré et n'écrivez
   jamais « (e) ».
 - Anglais : anglais britannique pour une candidature hors États-Unis et Canada, américain sinon.
-- Respectez la limite de mots demandée pour le corps de la lettre."""
+- Respectez la limite de mots demandée pour le corps de la lettre.
+- Écrivez comme un candidat sérieux qui aurait été relu par un conseiller expérimenté : une voix
+  personnelle, des faits précis, des transitions naturelles. Le lecteur ne doit à aucun moment sentir un
+  texte généré : pas de symétrie mécanique entre paragraphes, pas de conclusion qui résume tout, pas de
+  phrase qui pourrait figurer dans la lettre de n'importe qui.
+- Orthographe, accords, élisions (« le poste d'assistant », « à l'Université ») et prépositions devant
+  les établissements (« à la Mairie de… », « au Ministère de… », « chez Orange ») doivent être parfaits."""
+
+LETTER_REVIEW_SYSTEM = """Vous êtes conseiller en candidatures de bourses et correcteur professionnel. Vous relisez le corps
+d'une lettre de motivation avant son envoi au jury.
+
+Corrigez sans rien inventer : orthographe, grammaire, accords, élisions, prépositions, ponctuation,
+répétitions, tournures maladroites ou trop scolaires, phrases qui sonnent comme un texte généré
+(formules creuses, symétries, énumérations de trois adjectifs, conclusions qui résument). Gardez les faits,
+l'ordre des idées, la langue, le nombre de paragraphes à un près et la longueur à 10 % près.
+Ne mettez ni titre, ni liste, ni deux-points, ni tiret cadratin. Rendez la lettre corrigée."""
+
+
+STATEMENT_LABEL = {
+    "lettre": "lettre de motivation",
+    "essais": "plusieurs essais courts (par exemple leadership, réseau, choix du pays, projet de carrière) : rédigez une lettre dont chaque paragraphe peut servir de base à un essai",
+    "personal_statement": "personal statement : récit personnel et argumenté, sans formules de lettre",
+    "projet_recherche": "lettre accompagnée d'un projet de recherche : insistez sur le sujet, la méthode et le laboratoire visé",
+}
+
+STATEMENT_NOTE = {
+    "essais": ("Cette bourse demande plusieurs essais courts plutôt qu'une lettre. Servez-vous de chaque paragraphe comme base pour un essai et respectez les limites de mots du formulaire officiel.",
+               "This scholarship asks for several short essays rather than a letter. Use each paragraph as the basis for one essay and respect the word limits of the official form."),
+    "personal_statement": ("Cette bourse demande un personal statement : reprenez le corps de cette lettre sans l'en-tête ni les formules de politesse.",
+                           "This scholarship asks for a personal statement: reuse the body of this letter without the header and closing formulas."),
+    "projet_recherche": ("Cette bourse demande aussi un projet de recherche (sujet, méthode, calendrier, laboratoire d'accueil). Préparez-le à part, la lettre y fait référence.",
+                         "This scholarship also asks for a research proposal (topic, method, timeline, host lab). Prepare it separately; the letter refers to it."),
+}
 
 
 def _ai_user_prompt(p: Profile, s: Scholarship, answers: dict, language: str, max_words: int, tone: str) -> str:
@@ -763,6 +838,7 @@ Pays d'études : {countries}
 Description : {s.summary}
 Conditions : {'; '.join(s.eligibility or []) or '-'}
 Ce que le jury valorise : {themes}
+Document de motivation demandé : {STATEMENT_LABEL.get(getattr(s, 'statement_type', None) or 'lettre', 'lettre de motivation')}
 
 PROFIL
 Nom : {p.full_name}
@@ -772,6 +848,8 @@ Domaine : {DOMAINS.get(p.domain or '', '-')}
 Expériences : {p.experiences or '-'}
 Engagement : {p.engagement or '-'}
 Projet : {p.project or '-'}
+Années d'expérience professionnelle : {p.work_experience_years if getattr(p, 'work_experience_years', None) is not None else '-'}
+Centres d'intérêt : {getattr(p, 'interests', None) or '-'}
 Langues : {p.languages} ; tests : {p.language_scores}
 
 RÉPONSES DU CANDIDAT
@@ -815,6 +893,13 @@ def _ai_paragraphs(system_user: str, language: str, max_words: int) -> list[str]
         data2 = ask_json(LETTER_SYSTEM, retry, LETTER_SCHEMA, effort="high", max_tokens=8000)
         if data2 and data2.get("paragraphs"):
             paragraphs = [x.strip() for x in data2["paragraphs"] if x.strip()]
+    # Seconde lecture « expert » : orthographe, fluidité, rien qui sonne généré
+    review = ask_json(LETTER_REVIEW_SYSTEM, f"Langue : {'anglais' if language == 'en' else 'français'}. Limite : {max_words} mots.\n\nLETTRE\n" + "\n\n".join(paragraphs),
+                      LETTER_SCHEMA, effort="high", max_tokens=8000)
+    if review and review.get("paragraphs"):
+        reviewed = [x.strip() for x in review["paragraphs"] if x.strip()]
+        if reviewed and abs(len(reviewed) - len(paragraphs)) <= 1 and not check_letter(reviewed, language, max_words):
+            paragraphs = reviewed
     return paragraphs
 
 
@@ -855,6 +940,9 @@ def generate_letter(p: Profile, s: Scholarship, answers: dict, language: str, ma
         paragraphs = letter_template(p, s, answers, language, max_words, notes)
     paragraphs = [writing.fix_paragraph(x, language) for x in paragraphs]
     paragraphs = _fit_words([x for x in paragraphs if x], max_words)
+    st = getattr(s, "statement_type", None)
+    if st in STATEMENT_NOTE:
+        notes.append(t(*STATEMENT_NOTE[st]))
     letter = {**header, "paragraphs": paragraphs, "scholarship_id": s.id, "scholarship_title": s.title, "ai_used": ai_used, "notes": notes}
     return letter
 

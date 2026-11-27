@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from ..deadlines import deadline_info
+from ..deadlines import deadline_info, fr_month
 from ..matching import Criteria, hard_filter, language_ok, score
 from ..models import Application, Profile, Scholarship
 from ..vocab import DOMAINS, LEVELS, expand_nationalities
@@ -75,6 +75,16 @@ def fit_check(p: Profile, s: Scholarship, application: Application | None, use_a
             checks.append(_check("moyenne", t("Moyenne", "Grades"), "inconnu", t(f"Minimum demandé : {s.min_grade:g}/20. Ajoutez votre moyenne.", f"Required minimum: {s.min_grade:g}/20. Add your average grade.")))
         else:
             checks.append(_check("moyenne", t("Moyenne", "Grades"), "ok" if c.grade_average >= s.min_grade else "ko", t(f"Minimum {s.min_grade:g}/20, votre moyenne {c.grade_average:g}/20.", f"Minimum {s.min_grade:g}/20, your average {c.grade_average:g}/20.")))
+    if s.min_experience_years:
+        need = s.min_experience_years
+        label = t("Expérience professionnelle", "Work experience")
+        if c.experience_years is None:
+            checks.append(_check("experience", label, "inconnu", t(f"Au moins {need:g} an(s) demandé(s). Indiquez votre expérience dans votre profil.", f"At least {need:g} year(s) required. Add your experience to your profile.")))
+        else:
+            have = f"{c.experience_years:g}".replace(".", ",")
+            src = t("déclarée", "declared") if c.experience_declared else t("estimée d'après votre CV", "estimated from your CV")
+            status = "ok" if c.experience_years >= need else ("ko" if c.experience_declared else "attention")
+            checks.append(_check("experience", label, status, t(f"Au moins {need:g} an(s) demandé(s) ; votre expérience {src} : environ {have} an(s).", f"At least {need:g} year(s) required; your experience ({src}): about {c.experience_years:g} year(s).")))
     lang, msg = language_ok(s, c)
     if lang is not None:
         checks.append(_check("langue", t("Test de langue", "Language test"), "ok" if lang else "ko", (msg or "")[:1].upper() + (msg or "")[1:] + "."))
@@ -84,6 +94,9 @@ def fit_check(p: Profile, s: Scholarship, application: Application | None, use_a
     info = deadline_info(s, today)
     if info.status == "expiree":
         checks.append(_check("date", t("Date limite", "Deadline"), "ko", t("La date limite de cette session est passée.", "The deadline for this round has passed.")))
+    elif info.days_left is not None and s.deadline_estimated and not s.verified_at:
+        checks.append(_check("date", t("Date limite", "Deadline"), "attention", t(f"Date estimée vers {fr_month(s.deadline)}, d'après la session précédente : confirmez-la sur le site officiel avant de planifier votre dossier.",
+                                                                               f"Estimated around {fr_month(s.deadline)}, based on the previous round: confirm it on the official website before planning your application.")))
     elif info.days_left is not None:
         st = "attention" if info.days_left <= 30 else "ok"
         checks.append(_check("date", t("Date limite", "Deadline"), st, t(f"{info.days_left} jour(s) pour déposer votre dossier.", f"{info.days_left} day(s) left to apply.")))

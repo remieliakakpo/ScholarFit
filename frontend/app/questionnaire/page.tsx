@@ -26,7 +26,7 @@ type Question = {
 };
 type Step = { id: string; title: string; subtitle?: string; questions: Question[] };
 type Answers = Record<string, unknown>;
-type Result = { total_matches: number; destination_total?: number; has_destination?: boolean; items: Match[]; recommended_offer?: string | null; profile_saved?: boolean; missing?: string[] };
+type Result = { total_matches: number; destination_total?: number; has_destination?: boolean; items: Match[]; recommended_offer?: string | null; profile_saved?: boolean; missing?: string[]; next_session?: Match[]; widen_hint?: string | null };
 
 const STORE = "sf_questionnaire";
 
@@ -441,6 +441,8 @@ function Results({ result, meta, loggedIn, onRestart }: { result: Result; meta: 
           {shown.length > 0 && <div className="mt-4 grid gap-4 lg:grid-cols-2">{shown.map(card)}</div>}
         </section>
       )}
+
+      {result.widen_hint && <p className="rounded-2xl border border-line bg-surface p-4 text-sm text-muted">{result.widen_hint}</p>}
 
       {split && shownOthers.length > 0 && (
         <section>

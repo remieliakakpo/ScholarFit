@@ -6,7 +6,7 @@ import CountryPicker from "@/components/CountryPicker";
 import Icon from "@/components/Icon";
 import RequireAuth from "@/components/RequireAuth";
 import { ScoreRing } from "@/components/ScholarshipCard";
-import { Meta, Profile, api, getMeta, setToken } from "@/lib/api";
+import { Meta, Profile, api, getMeta, normalizeProfile, setToken } from "@/lib/api";
 import { useT } from "@/components/LangProvider";
 
 const STEPS = ["Identité", "Parcours", "Projet et atouts", "Facultatif"];
@@ -30,14 +30,22 @@ function ProfileForm() {
   const [langText, setLangText] = useState("");
 
   useEffect(() => {
-    getMeta().then(setMeta);
-    api<Profile>("/api/profile").then((pr) => {
+    getMeta().then(setMeta).catch((e) => setError(e.message));
+    api<unknown>("/api/profile").then((raw) => {
+      const pr = normalizeProfile(raw);
       setP(pr);
       setLangText(Object.entries(pr.languages).map(([k, v]) => `${k}:${v}`).join(", "));
     }).catch((e) => setError(e.message));
   }, []);
 
-  if (!p || !meta) return <p className="text-muted">{error ?? "Chargement…"}</p>;
+  if (!p || !meta)
+    return error ? (
+      <div className="card mx-auto max-w-md p-8 text-center">
+        <p className="font-serif text-xl">{t("Impossible d'afficher votre profil pour le moment.")}</p>
+        <p className="mt-2 text-sm text-muted">{error}</p>
+        <button className="btn-primary mt-5" onClick={() => window.location.reload()}>{t("Réessayer")}</button>
+      </div>
+    ) : <p className="text-muted">{t("Chargement…")}</p>;
   const set = <K extends keyof Profile>(k: K, v: Profile[K]) => setP({ ...p, [k]: v });
 
   async function save(goNext = false) {
@@ -51,11 +59,11 @@ function ProfileForm() {
       residence_country: p.residence_country || null, phone: p.phone || null, alerts_opt_in: p.alerts_opt_in,
       current_level: p.current_level || null, target_level: p.target_level || null, domain: p.domain || null,
       institution: p.institution || null, grade_average: p.grade_average, wished_countries: p.wished_countries,
-      languages, language_scores: p.language_scores, experiences: p.experiences || null, engagement: p.engagement || null,
+      languages, language_scores: p.language_scores, experiences: p.experiences || null, engagement: p.engagement || null, interests: p.interests || null, work_experience_years: p.work_experience_years ?? null,
       project: p.project || null, full_funding_only: p.full_funding_only, situations: p.situations,
     };
     try {
-      const out = await api<Profile>("/api/profile", { method: "PUT", body: JSON.stringify(body) });
+      const out = normalizeProfile(await api<unknown>("/api/profile", { method: "PUT", body: JSON.stringify(body) }));
       setP(out);
       setMsg(t("Profil enregistré."));
       if (goNext) setStep(Math.min(step + 1, STEPS.length - 1));
@@ -71,7 +79,7 @@ function ProfileForm() {
     fd.append("file", file);
     setError(null);
     try {
-      const out = await api<Profile>("/api/profile/cv", { method: "POST", body: fd });
+      const out = normalizeProfile(await api<unknown>("/api/profile/cv", { method: "POST", body: fd }));
       setP(out);
       setMsg(t("CV importé : vérifiez les champs préremplis (expériences, engagement, domaine)."));
     } catch (e) {
@@ -162,6 +170,8 @@ function ProfileForm() {
               <p className="mt-1 text-xs text-muted">DELF/DALF : indique le niveau en chiffre (B1 = 1, B2 = 2, C1 = 3).</p></div>
             <div><label className="label">{t("Expériences (stages, emplois, projets)")}</label><textarea rows={4} className="input" value={p.experiences ?? ""} onChange={(e) => set("experiences", e.target.value)} /></div>
             <div><label className="label">{t("Engagement associatif")}</label><textarea rows={3} className="input" value={p.engagement ?? ""} onChange={(e) => set("engagement", e.target.value)} /></div>
+            <div><label className="label">{t("Centres d'intérêt")}</label><input className="input" placeholder={t("Ex. robotique éducative, football, lecture d'essais économiques")} value={p.interests ?? ""} onChange={(e) => set("interests", e.target.value)} /></div>
+            <div><label className="label">{t("Années d'expérience professionnelle (stages et emplois)")}</label><input type="number" min={0} max={60} step={0.5} className="input" value={p.work_experience_years ?? ""} onChange={(e) => set("work_experience_years", e.target.value === "" ? null : Number(e.target.value))} /></div>
             <div><label className="label">{t("Projet professionnel")}</label><textarea rows={3} className="input" value={p.project ?? ""} onChange={(e) => set("project", e.target.value)} placeholder={t("Ce que vous voulez faire après vos études, et pourquoi.")} /></div>
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={p.full_funding_only} onChange={(e) => set("full_funding_only", e.target.checked)} />{t("Je ne cherche que des bourses à financement complet")}</label>
           </>
@@ -195,7 +205,7 @@ function ProfileForm() {
               <p className="text-xs text-muted">{t("Complété à")} {p.completeness} %</p>
             </div>
           </div>
-          {!p.minimum_ok && <p className="mt-3 text-sm text-warm">{t("Il manque :")} {p.missing_minimum.join(", ")}</p>}
+          {!p.minimum_ok && p.missing_minimum.length > 0 && <p className="mt-3 text-sm text-warm">{t("Il manque :")} {p.missing_minimum.join(", ")}</p>}
           {p.completeness_tip && <p className="mt-2 text-xs text-muted">{p.completeness_tip}</p>}
           {p.minimum_ok && <Link href="/mes-bourses" className="btn-dark mt-4 w-full">{t("Voir mes bourses")}</Link>}
         </div>

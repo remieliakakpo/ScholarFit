@@ -13,6 +13,7 @@ from ..deadlines import deadline_info
 from ..details import REQUIREMENTS
 from ..geo import REGIONS, WORLD, countries_in
 from ..vocab import COUNTRIES, DOMAINS, KINDS, LEVELS, NATIONALITY_GROUPS, expand_nationalities
+from ..visibility import public_filter
 
 router = APIRouter(prefix="/api", tags=["bourses"])
 
@@ -63,7 +64,7 @@ def list_scholarships(
     per_page: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
 ):
-    stmt = select(Scholarship)
+    stmt = select(Scholarship).where(public_filter())
     if kind:
         stmt = stmt.where(Scholarship.kind == kind)
     if q:
@@ -128,7 +129,9 @@ def stats_countries(include_expired: bool = False, kind: str | None = Query(None
     Les bourses sans pays fixe (ex. Erasmus Mundus, AUF) sont comptées à part dans /api/stats."""
     today = date.today()
     counts: dict[str, list[int]] = {}
-    stmt = select(Scholarship).where(Scholarship.kind == kind) if kind else select(Scholarship)
+    stmt = select(Scholarship).where(public_filter())
+    if kind:
+        stmt = stmt.where(Scholarship.kind == kind)
     for s in db.scalars(stmt):
         if s.link_status == "casse":
             continue
@@ -159,7 +162,7 @@ def stats(db: Session = Depends(get_db)):
     by_region = {r: 0 for r in REGIONS}
     by_kind = {k: 0 for k in KINDS}
     countries: set[str] = set()
-    for s in db.scalars(select(Scholarship)):
+    for s in db.scalars(select(Scholarship).where(public_filter())):
         if s.link_status == "casse":
             continue
         st = deadline_info(s, today).status
@@ -183,7 +186,7 @@ def stats(db: Session = Depends(get_db)):
 @router.get("/scholarships/{key}", response_model=ScholarshipOut)
 def get_scholarship(key: str, db: Session = Depends(get_db)):
     s = db.get(Scholarship, int(key)) if key.isdigit() else db.scalars(select(Scholarship).where(Scholarship.slug == key)).first()
-    if not s:
+    if not s or s.review == "rejete":
         raise HTTPException(404, t("Bourse introuvable", "Scholarship not found"))
     if is_en():
         from ..translate import ensure_en

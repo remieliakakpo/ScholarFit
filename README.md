@@ -54,7 +54,7 @@ python -m venv .venv
 source .venv/bin/activate            # Windows : .venv\Scripts\activate
 pip install -r requirements-dev.txt
 cp .env.example .env                 # facultatif : ajoute ta clé ANTHROPIC_API_KEY
-python -m app.cli seed               # base SQLite + 98 opportunités (82 bourses, 10 stages, 6 conférences) + comptes de démo
+python -m app.cli seed               # base SQLite + 133 opportunités (117 bourses, 10 stages, 6 conférences) + comptes de démo (local uniquement)
 uvicorn app.main:app --reload --port 8000
 
 # 2. Site (dans un autre terminal)
@@ -87,7 +87,7 @@ Lance PostgreSQL, l'API et le site. Pour activer l'IA : `ANTHROPIC_API_KEY=sk-..
 
 Ces trois comptes sont créés **et réparés à chaque démarrage de l'API** (`app/demo.py`) : même si l'API est lancée sans `start.ps1`, depuis un autre dossier, ou si `ADMIN_EMAILS` contient votre propre adresse, ces identifiants marchent. Après la connexion, chacun arrive sur son tableau de bord : « Mes bourses » pour l'étudiante, `/admin` pour l'administrateur, `/conseiller` pour le conseiller. La base SQLite est toujours `backend/bourses.db`, quel que soit le dossier de lancement.
 
-Avant toute mise en ligne : mettez `DEMO_ACCOUNTS=false` (les mots de passe ci-dessus sont publics) et changez `SECRET_KEY`.
+Ces comptes n'existent qu'en local : en ligne (`APP_ENV=production` ou base PostgreSQL), ils sont désactivés automatiquement à chaque démarrage. Pour vous donner les droits d'administrateur en ligne : `python -m app.cli make-admin votre.adresse@gmail.com` (voir DEPLOIEMENT.md 6.6).
 
 ### Comptes, confirmation de l'e-mail et mot de passe oublié
 
@@ -163,7 +163,7 @@ Règles de collecte (`app/scrapers/base.py`) : lecture de `robots.txt`, une requ
 
 Toutes les routes répondent en anglais avec `?lang=en` ou le cookie `sf_lang=en` ; sans l'un ni l'autre, rien ne change (français). Sont traduits : titre, résumé, conditions (`eligibility_notes`), pièces (`documents`), étapes (`application_steps`), `deadline_label`, `kind_label`, raisons et points à surveiller du matching, `/api/meta` (niveaux, domaines, régions, pays, couverture, pièces), `/api/questionnaire`, `/api/offres`, l'assistant `/api/chat` (qui comprend aussi les messages en anglais) et les alertes (dans la langue retenue pour le compte).
 
-Les 98 fiches de départ ont leur version anglaise dans `backend/app/data/scholarships_en.json`, chargée au démarrage. Les nouvelles fiches sont traduites par l'IA à chaque collecte automatique, ou à l'ouverture d'une fiche en anglais, puis gardées en base (`translations`). Pour tout traduire d'un coup : `python -m app.cli translate`.
+Les 98 fiches historiques ont leur version anglaise (les 35 ajoutées le 27/11/2026 sont traduites par l'IA à la première collecte ou avec `python -m app.cli translate`) dans `backend/app/data/scholarships_en.json`, chargée au démarrage. Les nouvelles fiches sont traduites par l'IA à chaque collecte automatique, ou à l'ouverture d'une fiche en anglais, puis gardées en base (`translations`). Pour tout traduire d'un coup : `python -m app.cli translate`.
 
 Côté interface, le bouton **FR / EN** de l'en-tête enregistre le cookie `sf_lang` et recharge la page. Le serveur lit ce cookie (`lib/i18n-server.ts`) et écrit la langue dans `<html lang>` ; le navigateur la lit avec `useT()` (`components/LangProvider.tsx`). Chaque texte de l'interface passe par `t("texte en français")` ; sa version anglaise est dans `frontend/lib/i18n-en.ts` (un texte absent reste en français). Pour ajouter un texte : l'écrire en français dans `t(...)`, puis ajouter la ligne correspondante dans `i18n-en.ts`. Les noms de pays viennent de `Intl.DisplayNames`, les dates et montants suivent la langue choisie.
 
@@ -246,7 +246,7 @@ npx playwright test                       # E2E_BASE_URL=https://www.votre-domai
 
 ## Variables d'environnement
 
-Backend (`backend/.env`, voir `.env.example`) : `DATABASE_URL`, `SECRET_KEY`, `CORS_ORIGINS`, `ADMIN_EMAILS`, `DEMO_ACCOUNTS` (par défaut `true`), `SITE_URL`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_SSL`, `VERIFY_LINK_HOURS`, `RESET_LINK_MINUTES`, `ANTHROPIC_API_KEY`, `CLAUDE_MODEL` (par défaut `claude-opus-5-5`), `AI_FREE_GENERATIONS_PER_DAY`, `COACHING_AUTO_ASSIGN` (par défaut `true` ; à `false`, chaque demande d'accompagnement attend qu'un administrateur choisisse le conseiller), `SCRAPER_USER_AGENT`, `SCRAPER_MIN_DELAY_SECONDS`, `OFFER_STANDARD_PRICE`, `OFFER_PREMIUM_PRICE`, `AUTO_COLLECT_HOURS` (6 par défaut, 0 pour désactiver), `RELIEFWEB_APPNAME`, `AI_DISCOVERY_ENABLED`, `AI_DISCOVERY_MAX_SEARCHES`, `API_PUBLIC_URL`, `PAYMENT_PROVIDER` (`simulation` par défaut, `cinetpay`, `manuel`), `CINETPAY_APIKEY`, `CINETPAY_SITE_ID`, `CINETPAY_SECRET_KEY`, `EMAIL_BACKEND` (`console`, `smtp`, `brevo`, `resend`), `EMAIL_REPLY_TO`, `BREVO_API_KEY`, `RESEND_API_KEY`.
+Backend (`backend/.env`, voir `.env.example`) : `APP_ENV` (`production` en ligne), `DATABASE_URL`, `SECRET_KEY`, `SENTRY_DSN` (facultatif), `RATE_LIMIT_ENABLED` (par défaut `true`), `CORS_ORIGINS`, `ADMIN_EMAILS`, `DEMO_ACCOUNTS` (par défaut `true`), `SITE_URL`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_SSL`, `VERIFY_LINK_HOURS`, `RESET_LINK_MINUTES`, `ANTHROPIC_API_KEY`, `CLAUDE_MODEL` (par défaut `claude-opus-5-5`), `AI_FREE_GENERATIONS_PER_DAY`, `COACHING_AUTO_ASSIGN` (par défaut `true` ; à `false`, chaque demande d'accompagnement attend qu'un administrateur choisisse le conseiller), `SCRAPER_USER_AGENT`, `SCRAPER_MIN_DELAY_SECONDS`, `OFFER_STANDARD_PRICE`, `OFFER_PREMIUM_PRICE`, `AUTO_COLLECT_HOURS` (6 par défaut, 0 pour désactiver), `RELIEFWEB_APPNAME`, `AI_DISCOVERY_ENABLED`, `AI_DISCOVERY_MAX_SEARCHES`, `API_PUBLIC_URL`, `PAYMENT_PROVIDER` (`simulation` par défaut, `cinetpay`, `manuel`), `CINETPAY_APIKEY`, `CINETPAY_SITE_ID`, `CINETPAY_SECRET_KEY`, `EMAIL_BACKEND` (`console`, `smtp`, `brevo`, `resend`), `EMAIL_REPLY_TO`, `BREVO_API_KEY`, `RESEND_API_KEY`.
 
 Site (`frontend/.env.local`) : `API_URL_INTERNAL` (adresse de l'API pour le serveur Next.js, `http://127.0.0.1:8000` par défaut) ; `NEXT_PUBLIC_API_URL` seulement si l'API est sur un autre domaine en production (sinon laisser vide) . Les numéros de don (Flooz, Mixx by Yas) sont dans `frontend/components/Support.tsx` (constante `NUMBERS`), les logos dans `frontend/public/paiement/`.
 
@@ -256,7 +256,8 @@ Site (`frontend/.env.local`) : `API_URL_INTERNAL` (adresse de l'API pour le serv
 - **Alertes WhatsApp** : en plus des e-mails, via l'API WhatsApp Business.
 - **Connecteurs réels** : vérifier robots.txt et conditions de chaque source, ajuster les sélecteurs, demander des partenariats.
 - **Recherche sémantique** : remplacer la similarité par mots-clés par des embeddings stockés dans PostgreSQL avec pgvector.
-- **Migrations de base** : ajouter Alembic avant la première mise en production (le MVP crée les tables au démarrage).
+- **Migrations de base** : les colonnes et index nouveaux sont ajoutés au démarrage ; passer à Alembic si le schéma doit un jour renommer ou supprimer des colonnes.
+- **Vérification des fiches** : les 133 fiches de départ restent « à vérifier » (dates estimées d'après la session précédente) tant qu'un administrateur ne les a pas confirmées dans /admin (voir DEPLOIEMENT.md, « Entretien du site »).
 - **Stockage des fichiers** : les CV sont stockés en texte dans la base ; pour garder les fichiers d'origine, ajouter un stockage S3 privé et chiffré.
 - **Accompagnement** : envoyer les messages et rappels par e-mail ou WhatsApp, synchroniser les rendez-vous avec un agenda (fichier .ics, Google Agenda), joindre des fichiers aux messages, formules payantes si le modèle économique le prévoit, et un coach IA qui prépare les relectures pour le conseiller.
 - **Base existante** : les nouvelles tables (`advisors`, `coachings`, `coaching_steps`, `coaching_messages`, `coaching_meetings`) sont créées au démarrage ; aucune table existante ne change, donc une base du MVP précédent continue de fonctionner (relance `python -m app.cli seed` pour y ajouter le compte conseiller de démo).

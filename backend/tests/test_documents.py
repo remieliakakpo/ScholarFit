@@ -49,7 +49,7 @@ def test_cv_diagnostic_criteria(client):
     keys = {c["key"] for c in out["criteria"]}
     assert {"coordonnees", "structure", "verbes_action", "resultats", "langues", "adequation"} <= keys
     assert 0 <= out["score"] <= 100 and out["verdict"]
-    assert any(rw["proposal"].startswith("Piloté la refonte") for rw in out["rewrites"])
+    assert any(rw["proposal"].startswith("Pilotage de la refonte") for rw in out["rewrites"])
 
 
 def test_adapted_cv_format_and_export(client):
@@ -61,7 +61,7 @@ def test_adapted_cv_format_and_export(client):
     assert cv["format"] in ("lebenslauf", "europass", "ats", "us_resume", "uk_cv", "francais", "academique")
     lines = [b for sec in cv["sections"] for e in sec["entries"] for b in e["bullets"]] + [i for sec in cv["sections"] for i in sec["items"]]
     assert lines and all("—" not in x and "[" not in x for x in lines)
-    assert any(b.startswith("Piloté la refonte") for b in lines)
+    assert any(b.startswith("Pilotage de la refonte") for b in lines), lines
     pdf = client.post("/api/export/cv", headers=h, params={"fmt": "pdf"}, json={"data": cv})
     assert pdf.status_code == 200 and pdf.content.startswith(b"%PDF")
     docx = client.post("/api/export/cv", headers=h, params={"fmt": "docx"}, json={"data": cv})
@@ -160,7 +160,7 @@ def test_ai_paths_are_cleaned(monkeypatch):
     monkeypatch.setattr(cvmod, "ask_json", fake_cv)
     out = cvmod.build_cv(CV, p, s, "a@b.c", use_ai=True)
     bullets = out["sections"][0]["entries"][0]["bullets"]
-    assert bullets == ["Conçu une application, 300 utilisateurs"]
+    assert bullets == ["Conception d'une application, 300 utilisateurs"]
     assert "—" not in out["summary"]
 
     calls = []
@@ -172,7 +172,7 @@ def test_ai_paths_are_cleaned(monkeypatch):
         return {"paragraphs": ["J'ai conçu une application utilisée par 300 patients.", "Je vise ce master à Heidelberg.", "Je reste disponible pour un entretien."]}
     monkeypatch.setattr(lmod, "ask_json", fake_letter)
     L = lmod.generate_letter(p, s, {}, "fr", 400, "sobre", use_ai=True, email="a@b.c")
-    assert len(calls) == 2 and "CORRIGEZ" in calls[1]
+    assert len(calls) == 3 and "CORRIGEZ" in calls[1] and "LETTRE" in calls[2]  # rédaction, correction, relecture experte
     assert L["paragraphs"][0].startswith("J'ai conçu") and L["ai_used"]
 
 
@@ -304,3 +304,26 @@ def test_cv_keeps_source_language_without_ai():
     assert b["language"] == "fr" and b["target_language"] == "en"
     assert all(sec["title"].isupper() or sec["title"][0].isupper() for sec in b["sections"])
     assert any("importez la version anglaise" in c for c in b["changes"])
+
+
+def test_cv_and_letter_style_fr():
+    """Style attendu par l'équipe : tâches au style nominal, élisions, prépositions devant les établissements."""
+    from app.ai import style
+    assert style.to_nominal_fr("Développé un tableau de bord") == "Développement d'un tableau de bord"
+    assert style.to_nominal_fr("Formé 15 agents à la bureautique") == "Formation de 15 agents aux outils bureautiques"
+    assert style.to_nominal_fr("Responsable de la refonte du site") == "Pilotage de la refonte du site"
+    assert style.to_nominal_fr("Chargée de la gestion des stocks") == "Gestion des stocks"
+    assert style.at_org_fr("Mairie du Golfe 1").startswith("à la Mairie")
+    assert style.at_org_fr("Ministère de la Santé").startswith("au Ministère")
+    assert style.smart_lower("Baccalauréat série C") == "baccalauréat série C"
+
+
+def test_rule_cv_profile_is_full_sentences(client):
+    h = _student(client, "profilcv@example.org")
+    s = _first(client, "eiffel")
+    cv = client.post("/api/cv/adapt", headers=h, json={"scholarship_id": s["id"]}).json()["document"]["data"]
+    summary = cv.get("summary") or ""
+    assert summary and not summary.lower().startswith(("compétences clés", "expérience pratique"))
+    assert all(x.strip().endswith(".") for x in re.split(r"(?<=\.)\s+", summary) if x.strip())
+    bullets = [b for sec in cv["sections"] if sec["key"] == "experience" for e in sec["entries"] for b in e["bullets"]]
+    assert not any(re.match(r"^(Développé|Formé|Piloté|Géré)\b", b) for b in bullets), bullets

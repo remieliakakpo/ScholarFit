@@ -6,6 +6,7 @@ TEST_DB = Path(__file__).resolve().parent.parent / "test_bourses.db"
 os.environ["DATABASE_URL"] = "sqlite:///" + TEST_DB.as_posix()
 os.environ["ANTHROPIC_API_KEY"] = ""  # les tests tournent en mode hors-ligne
 os.environ["ADMIN_EMAILS"] = "admin@example.org"
+os.environ["RATE_LIMIT_ENABLED"] = "false"
 os.environ["AUTO_COLLECT_HOURS"] = "0"  # pas de collecte en arrière-plan pendant les tests
 os.environ["SMTP_HOST"] = ""  # e-mails écrits dans la console
 os.environ["DEMO_ACCOUNTS"] = "true"

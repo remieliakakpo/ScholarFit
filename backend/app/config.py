@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=(".env", BACKEND_DIR / ".env"), env_file_encoding="utf-8", extra="ignore")
 
     app_name: str = "ScholarFit"
+    # production | local. Vide : production dès que DATABASE_URL n'est pas SQLite.
+    app_env: str = ""
     # SQLite par défaut pour démarrer sans rien installer. En production :
     # postgresql+psycopg://user:pass@localhost:5432/bourses
     database_url: str = "sqlite:///./bourses.db"
@@ -113,6 +115,22 @@ class Settings(BaseSettings):
     # Durée de validité des liens envoyés par e-mail
     verify_link_hours: int = 48
     reset_link_minutes: int = 60
+
+    # Limite de requêtes par adresse IP (connexion, inscription, assistant…)
+    rate_limit_enabled: bool = True
+    # Suivi des erreurs (facultatif) : adresse DSN d'un projet Sentry. Vide = désactivé.
+    sentry_dsn: str = ""
+
+    @property
+    def is_production(self) -> bool:
+        """En ligne = base PostgreSQL (ou APP_ENV=production). SQLite = poste local ou tests."""
+        return self.app_env.strip().lower() == "production" or (
+            self.app_env.strip().lower() != "local" and not self.database_url.startswith("sqlite"))
+
+    @property
+    def demo_enabled(self) -> bool:
+        """Comptes de démonstration : jamais en production, quoi que dise DEMO_ACCOUNTS."""
+        return self.demo_accounts and not self.is_production
 
     @property
     def cors_origin_list(self) -> list[str]:

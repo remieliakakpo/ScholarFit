@@ -113,7 +113,7 @@ Si vous avez perdu votre `.env`, rien de grave : on recrée la clé secrète, la
 ### 6.2 Réglages indispensables
 1. **Settings > Source > Root Directory** = `backend`. Sans cela, Railway lance le `start.sh` de la racine, fait pour votre ordinateur, et les logs répètent `start.sh: line 7: python3: command not found` (redémarrages en boucle, statut « Crashed »).
 2. **Settings > Deploy > Start Command** : laissez vide. Le `Dockerfile` du dossier `backend` contient déjà la bonne commande.
-3. **Variables** : ajoutez `SECRET_KEY`, `PORT` = `8000`, et selon le cas `ANTHROPIC_API_KEY`, `RELIEFWEB_APPNAME`, `AI_DISCOVERY_ENABLED`. Le champ de gauche est le **nom**, celui de droite la **valeur**. Ne pas les inverser (exemple d'erreur vécue : « Domaine » écrit dans le champ du nom au lieu de `CORS_ORIGINS`).
+3. **Variables** : ajoutez `APP_ENV` = `production`, `SECRET_KEY`, `PORT` = `8000`, et selon le cas `ANTHROPIC_API_KEY`, `RELIEFWEB_APPNAME`, `AI_DISCOVERY_ENABLED`. Le champ de gauche est le **nom**, celui de droite la **valeur**. Ne pas les inverser (exemple d'erreur vécue : « Domaine » écrit dans le champ du nom au lieu de `CORS_ORIGINS`).
 4. **Settings > Networking** : cliquez Generate Domain. Vérifiez que le port du domaine est `8000`.
 
 ### 6.3 Vérifier
@@ -126,13 +126,24 @@ Dans les **Deploy Logs**, cherchez `Uvicorn running on http://0.0.0.0:8000` et `
 | `start.sh: line 7: python3: command not found`, boucle de redémarrage | Mauvais dossier déployé | Root Directory = `backend`, Start Command vide |
 | « Application failed to respond » dans le navigateur | Le domaine vise un mauvais port | Variable `PORT=8000` et port du domaine sur 8000, attendre le redéploiement |
 | Erreur 400 « Your credit balance is too low » dans les logs | La clé est valide mais le compte Anthropic n'a plus de crédit | Acheter du crédit (console.anthropic.com > Plans & Billing) ou mettre `AI_DISCOVERY_ENABLED=false`. Ce n'est pas bloquant : le site marche sans IA |
-| « 0 bourse(s) proposée(s) » pour chaque zone | Même cause (découverte par IA sans crédit) | Idem. Les 98 bourses de départ et les sites d'annonces restent chargés |
+| « 0 bourse(s) proposée(s) » pour chaque zone | Même cause (découverte par IA sans crédit) | Idem. Les 133 fiches de départ et les sites d'annonces restent chargées |
 
 ### 6.5 Base de données durable
 Par défaut, la base est un fichier SQLite dans le conteneur : elle est effacée à chaque redéploiement, donc comptes et dossiers aussi. Pour la conserver : dans Railway, New > Database > PostgreSQL, puis copiez son lien de connexion dans la variable `DATABASE_URL` du serveur (au format `postgresql+psycopg://...`). Le Dockerfile installe déjà le pilote Postgres.
 
-### 6.6 Sécurité après le premier démarrage
-Les comptes de démonstration (`admin@example.org`, `demo@example.org`, `conseiller@example.org`) ont des mots de passe écrits dans le code et donc publics. Ils sont recréés à chaque démarrage tant que `DEMO_ACCOUNTS=true`. Avant de partager le site : mettez `DEMO_ACCOUNTS=false`, supprimez-les depuis l'API ou la base, et définissez `ADMIN_EMAILS` avec votre vraie adresse. Pour que les e-mails de confirmation et de mot de passe oublié partent vraiment, ajoutez aussi `SITE_URL` (adresse publique du site) et les variables `SMTP_*` (voir le README).
+### 6.6 Sécurité après le premier démarrage (version définitive du 27/11/2026)
+Le serveur se met tout seul en **mode production** dès que la base est PostgreSQL ou que la variable `APP_ENV=production` est présente. Ajoutez quand même `APP_ENV=production` dans Railway > Variables. En mode production :
+- les comptes de démonstration (`admin@example.org`, `demo@example.org`, `conseiller@example.org`) sont **désactivés automatiquement** à chaque démarrage (mot de passe remplacé, droits retirés) ;
+- si `SECRET_KEY` n'est pas défini, une clé aléatoire est créée et gardée dans la base (table `app_settings`) : les sessions restent valides d'un redéploiement à l'autre ;
+- si `PAYMENT_PROVIDER` vaut encore `simulation`, le site passe en **paiement manuel** (validation dans /admin) au lieu d'accepter des paiements factices ;
+- les droits d'administrateur ne sont donnés qu'à une adresse listée dans `ADMIN_EMAILS` **et confirmée** par e-mail ;
+- les connexions, inscriptions et demandes de mot de passe oublié sont limitées (protection contre les robots).
+
+**Devenir administrateur** : inscrivez-vous sur le site avec votre vraie adresse, puis dans Railway > service backend > onglet **Shell** :
+```
+python -m app.cli make-admin votre.adresse@gmail.com
+```
+Ajoutez aussi cette adresse dans `ADMIN_EMAILS`. Pour que les e-mails de confirmation et de mot de passe oublié partent vraiment, ajoutez `SITE_URL` (adresse publique du site) et `EMAIL_BACKEND` / `BREVO_API_KEY` ou les variables `SMTP_*` (voir 8.4).
 
 ## 7. Déployer le site sur Vercel
 
@@ -222,12 +233,32 @@ Avec plusieurs copies de l'API, laissez `AUTO_COLLECT_HOURS=24` sur une seule et
 - Google Search Console : ajoutez le domaine, puis Sitemaps > `https://www.votre-domaine.org/sitemap.xml`. Le plan liste les pages pays (`/destinations/france`, `/destinations/france/bourses`…) et toutes les fiches.
 
 ### 8.7 Comptes de démonstration
-Mettez `DEMO_ACCOUNTS=false` et votre adresse dans `ADMIN_EMAILS`. `python -m app.cli check-config` signale aussi les comptes de démonstration dont le mot de passe public n'a pas été changé.
+En ligne, ils sont désactivés automatiquement (voir 6.6). Mettez tout de même `DEMO_ACCOUNTS=false` et votre adresse dans `ADMIN_EMAILS`. `python -m app.cli check-config` signale les réglages qui manquent encore.
+
+### 8.8 Suivi des erreurs et disponibilité (facultatif, gratuit)
+- **Erreurs** : créez un projet gratuit sur sentry.io (type « FastAPI »), copiez son DSN dans la variable Railway `SENTRY_DSN`. Chaque erreur du serveur vous est alors envoyée par e-mail avec son détail.
+- **Disponibilité** : sur uptimerobot.com (gratuit), ajoutez une surveillance HTTP de `https://VOTRE-DOMAINE.up.railway.app/api/health` toutes les 5 minutes. Vous recevez un e-mail si le site tombe.
+
+## 8 bis. Entretien du site : ce que vous faites, et quand
+
+| Quand | Quoi | Où |
+|---|---|---|
+| Chaque semaine (10 min) | Ouvrir **/admin > Fiches à relire** : publier ou rejeter les bourses trouvées par la collecte. Rien n'est visible par les étudiants avant votre validation. | Site, compte admin |
+| Chaque semaine | Cliquer **Télécharger une sauvegarde de la base** (en haut de /admin) et ranger le fichier sur un Drive. | Site, compte admin |
+| Chaque mois (30 min) | Vérifier 10 à 15 grandes bourses (dates, montants, lien) sur leur site officiel et les corriger dans /admin. Une fiche corrigée passe « vérifiée » et n'est plus écrasée par les mises à jour. | Site, compte admin |
+| Chaque mois | Valider les paiements manuels en attente et regarder les avis des accompagnements. | /admin |
+| Après chaque nouvelle version | Remplacer le code, pousser sur GitHub, attendre Railway et Vercel, puis ouvrir `/api/health` et vérifier `"version": "2026-11-27b"` (ou plus récent). | GitHub, Railway, Vercel |
+| Si un e-mail Sentry ou UptimeRobot arrive | Ouvrir les Deploy Logs Railway, puis la check-list de la section 10. | Railway |
+
+**Dates des bourses** : tant qu'une fiche n'est pas vérifiée, sa date est une estimation d'après la session précédente. Le site l'affiche honnêtement (« Attendue vers janvier 2027 (à confirmer) ») et ne la présente jamais comme une date exacte. Dès que vous corrigez la date dans /admin, elle s'affiche normalement avec le compte à rebours.
+
+### Grande échelle
+Le site tient sans changement quelques milliers d'inscrits. Au-delà (ou si les pages deviennent lentes) : passer le service Railway à 2 Go de mémoire, garder PostgreSQL, et lancer la collecte dans un second service Railway (même dépôt, Start Command `python -m app.cli nightly` en tâche planifiée « Cron » une fois par jour) avec `AUTO_COLLECT_HOURS=0` sur le service principal, pour que la collecte ne ralentisse pas le site.
 
 ## 9. Test final
 
 1. Ouvrez l'adresse Vercel : la page d'accueil s'affiche.
-2. La liste des bourses se remplit (98 au départ, plus la collecte automatique).
+2. La liste des bourses se remplit (133 au départ, plus la collecte automatique).
 3. Créez un compte et connectez-vous.
 4. Les fonctions IA (CV, lettres, compatibilité) ne marchent que si la clé IA est valide **et** le compte a du crédit ; sinon le site utilise le mode hors-ligne.
 5. Les stages des organisations internationales apparaissent après l'ajout de `RELIEFWEB_APPNAME`.
@@ -242,3 +273,5 @@ Mettez `DEMO_ACCOUNTS=false` et votre adresse dans `ADMIN_EMAILS`. `python -m ap
 4. Vercel : Root Directory = `frontend`, variables `API_URL_INTERNAL` et `NEXT_PUBLIC_API_URL` correctes, Redeploy fait.
 5. Railway : `CORS_ORIGINS` = adresse du site Vercel.
 6. Git : `git remote -v` montre-t-il le bon dépôt ? Le dernier `git push` a-t-il réussi ?
+7. **Railway est-il à jour ?** Ouvrez `https://VOTRE-DOMAINE.up.railway.app/api/health`. La réponse doit contenir `"version": "2026-11-27b"` (ou plus récent). Si `version` est absent, Railway fait tourner un ancien backend : c'est ce qui donne « Not Found » sur « Renvoyer le lien », « Salut, » sans prénom et, avant le correctif du 27/11, l'écran « Application error » sur /profil. Vérifiez que le dossier `backend` a bien été poussé sur GitHub, que Railway suit la bonne branche (Settings > Source) et que le dernier déploiement n'a pas échoué (onglet Deployments), puis Redeploy.
+8. **Aucun e-mail reçu ?** Sans `EMAIL_BACKEND` / `BREVO_API_KEY` (ou `SMTP_*`) dans Railway, rien ne part : les liens sont seulement écrits dans les Deploy Logs. Sans domaine à vous, Brevo accepte une adresse d'expéditeur vérifiée (Senders > Add a sender, par exemple votre Gmail) : mettez cette adresse exacte dans `SMTP_FROM`. Essai : Railway > service backend > Shell > `python -m app.cli test-email votre.adresse@gmail.com`.

@@ -40,8 +40,33 @@ def _ensure(db: Session, email: str, password: str, name: str) -> tuple[User, bo
     return user, created
 
 
+def disable_demo_accounts(db: Session) -> int:
+    """En production : les comptes de démo qui ont encore leur mot de passe public sont bloqués
+    (mot de passe aléatoire, droits retirés). Renvoie le nombre de comptes bloqués."""
+    import secrets
+
+    n = 0
+    for email, pwd in (DEMO_ADMIN, DEMO_STUDENT, DEMO_ADVISOR):
+        user = db.scalars(select(User).where(User.email == email)).first()
+        if user is not None and verify_password(pwd, user.password_hash):
+            user.password_hash = hash_password(secrets.token_urlsafe(24))
+            user.is_admin = False
+            if user.advisor is not None:
+                user.advisor.active = False
+            n += 1
+            log.warning("Compte de démonstration %s bloqué (production)", email)
+    db.commit()
+    return n
+
+
 def ensure_demo_accounts(db: Session, verbose: bool = False) -> None:
+    from .config import get_settings
+
     say = print if verbose else log.info
+    if not get_settings().demo_enabled:
+        n = disable_demo_accounts(db)
+        say("Comptes de démo désactivés (production ou DEMO_ACCOUNTS=false)" + (f" : {n} bloqué(s)." if n else "."))
+        return
 
     admin, created = _ensure(db, *DEMO_ADMIN, name="Admin")
     admin.is_admin = True

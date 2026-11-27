@@ -92,6 +92,9 @@ class ScholarshipBase(BaseModel):
     city: str | None = None
     remote: bool = False
     duration: str | None = None
+    min_experience_years: float | None = None
+    statement_type: str | None = None  # lettre | essais | personal_statement | projet_recherche
+    application_languages: list[str] = []
 
     @field_validator("kind")
     @classmethod
@@ -148,6 +151,7 @@ class ScholarshipOut(ScholarshipBase, ORM):
     deadline_estimated: bool = False
     previous_deadline: date | None = None
     next_expected_deadline: date | None = None
+    review: str = "publie"  # publie | a_relire | rejete
 
 
 class ScholarshipPage(BaseModel):
@@ -174,6 +178,8 @@ class ProfileIn(BaseModel):
     language_scores: dict[str, float] | None = None
     experiences: str | None = None
     engagement: str | None = None
+    interests: str | None = None
+    work_experience_years: float | None = Field(default=None, ge=0, le=60)
     project: str | None = None
     full_funding_only: bool | None = None
     situations: list[str] | None = None
@@ -204,6 +210,8 @@ class ProfileOut(ORM):
     language_scores: dict[str, float]
     experiences: str | None
     engagement: str | None
+    interests: str | None = None
+    work_experience_years: float | None = None
     project: str | None
     full_funding_only: bool
     situations: list[str]
@@ -240,6 +248,10 @@ class MatchesOut(BaseModel):
     missing_minimum: list[str]
     excluded_count: int
     items: list[MatchOut]
+    # Bourses annuelles à session close qui conviendraient : « À préparer pour la prochaine session »
+    next_session: list[MatchOut] = []
+    # Conseil quand il y a peu de résultats (élargir les pays, compléter le profil)
+    widen_hint: str | None = None
 
 
 # ---------- Chat ----------

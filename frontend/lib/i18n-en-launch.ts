@@ -1,6 +1,13 @@
 // Version anglaise des textes ajoutés pour le lancement : paiement en ligne, documents d'accompagnement,
 // espace conseiller, pages pays, pages légales. Fusionné avec lib/i18n-en.ts dans lib/i18n.ts.
 const EN_LAUNCH: Record<string, string> = {
+  // Erreurs de connexion au serveur et page d'erreur
+  "Cette fonction n'est pas disponible sur le serveur : il n'est sans doute pas à jour. Réessayez dans quelques minutes.": "This feature isn't available on the server yet: it's probably not up to date. Please try again in a few minutes.",
+  "Le site ne joint pas correctement le serveur de ScholarFit. Réessayez dans quelques minutes.": "The site can't reach the ScholarFit server properly. Please try again in a few minutes.",
+  "Impossible d'afficher votre profil pour le moment.": "We can't show your profile right now.",
+  "Un problème est survenu sur cette page.": "Something went wrong on this page.",
+  "Rechargez la page. Si le problème continue, revenez dans quelques minutes : vos données ne sont pas perdues.": "Reload the page. If it keeps happening, come back in a few minutes: your data is safe.",
+  "Retour à l'accueil": "Back to home",
   // Paiement en ligne
   "Paiement en ligne sécurisé": "Secure online payment",
   "Ouverture du paiement…": "Opening payment…",

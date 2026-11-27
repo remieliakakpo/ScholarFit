@@ -187,8 +187,8 @@ function Page() {
     setList((l) => l?.map((x) => (x.id === d.id ? { ...x, status: d.status, rating: d.rating, unread: 0 } : x)) ?? l);
   }, []);
 
-  if (error) return <p className="text-danger">{error}</p>;
-  if (!list || !cm) return <p className="text-muted">{t("Chargement…")}</p>;
+  if (error) return <div className="space-y-3"><h1 className="text-[1.65rem] sm:text-3xl">{t("Accompagnement")}</h1><p className="text-danger">{error}</p></div>;
+  if (!list || !cm) return <div className="space-y-3"><h1 className="text-[1.65rem] sm:text-3xl">{t("Accompagnement")}</h1><p className="text-muted">{t("Chargement…")}</p></div>;
 
   const current = list.find((c) => c.status === "demande" || c.status === "en_cours");
   const last = list[0];

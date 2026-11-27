@@ -152,7 +152,7 @@ Documentation interactive : `/docs` (Swagger, générée par FastAPI). Résumé 
 
 | Connecteur | Sources actives | Fonctionnement |
 |---|---|---|
-| `json` | Données d'exemple (`scholarships.json`, 98 fiches) | Chargement au `seed` |
+| `json` | Données d'exemple (`scholarships.json`, 133 fiches, générées par `build_seed.py`) | Chargement au `seed` |
 | `site` | 12 sites d'annonces actifs (Opportunity Desk, Scholars4Dev, After School Africa…), 1 désactivé | Flux RSS du site (`/feed/` par défaut) ; s'il donne moins de 5 liens, lecture de la page d'accueil ou des `paths` et tri des liens par mots-clés ; puis extraction de chaque annonce |
 | `ai_discovery` | Découverte IA (monde entier) | Claude cherche sur le web, les 46 zones en un passage hebdomadaire (`scrapers/discovery.py`, liste `ZONES`) ; l'état de rotation est gardé dans `.cache/discovery_state.json` |
 | `reliefweb` | Stages ONU, ONG, organisations internationales | API `https://api.reliefweb.int/v2/jobs`, type « Internship » ; demande `RELIEFWEB_APPNAME` (gratuit, sur apidoc.reliefweb.int) |
@@ -276,7 +276,7 @@ Toutes les routes suivent le même schéma : réécriture Next.js, middleware de
 
 - **Local sans Docker** : `start.ps1` (Windows, `Set-ExecutionPolicy Bypass` nécessaire) ou `start.sh`. API sur `http://localhost:8000/docs`, site sur `http://localhost:3000`.
 - **Local avec Docker** : `docker compose up --build` (PostgreSQL 16, API, site).
-- **Données de départ** : `python -m app.cli seed` charge les 98 fiches et crée trois comptes de démonstration (administrateur, candidat `demo@example.org`, conseiller `conseiller@example.org`) avec des mots de passe connus, affichés par la commande.
+- **Données de départ** : `python -m app.cli seed` charge les 133 fiches et, en local seulement, crée trois comptes de démonstration (administrateur, candidat `demo@example.org`, conseiller `conseiller@example.org`) avec des mots de passe connus, affichés par la commande.
 - **Autres commandes** (`python -m app.cli`) : `collect [--source NOM]`, `extract URL`, `nightly`, `discover --zones N`, `translate`, `check-links [--all]`.
 - **Tests** : `cd backend && python -m pytest -q`. 47 tests, base SQLite jetable, IA et collecte automatique désactivées (`tests/conftest.py`). Ils passaient tous au moment de la rédaction de ce document.
 - **CI** (`.github/workflows/ci.yml`, à chaque push et pull request) : backend Python 3.13 avec `pytest`, frontend Node 22 avec `npm ci`, `npm run typecheck` et `npm run build`. Il n'y a pas de tests frontend.
@@ -294,3 +294,15 @@ Toutes les routes suivent le même schéma : réécriture Next.js, middleware de
 8. **Alertes uniquement dans l'application.** `alerts.send()` écrit dans les logs ; aucun e-mail ni SMS n'est envoyé.
 9. **Dépendance aux sites d'annonces.** L'extraction par règles est fragile si un site change sa mise en page ; sans IA, les fiches collectées sont moins complètes.
 10. **Incohérence de documentation** : la docstring de `scheduler.py` parle de 24 h par défaut, alors que `config.py` et `.env.example` fixent 6 h.
+
+## Version définitive (27/11/2026) : ce qui a changé
+
+- **Mode production** (`Settings.is_production`) : `APP_ENV=production` ou base non SQLite. Désactive les comptes de démo (`demo.disable_demo_accounts`), remplace la clé de signature par défaut par une clé aléatoire stockée dans `app_settings` (`security.signing_key`), bascule le paiement `simulation` en `manuel` (`payments.provider`).
+- **Sessions** : le jeton contient l'empreinte du mot de passe (`pw`) ; changer de mot de passe déconnecte les autres appareils.
+- **Limitation de débit** : `app/ratelimit.py` (en mémoire, par IP réelle via `X-Forwarded-For`) sur inscription, connexion, mot de passe oublié.
+- **Relecture des fiches** : colonne `review` (`publie` | `a_relire` | `rejete`). Les fiches trouvées par la collecte arrivent en `a_relire` ; `visibility.public_filter()` est appliqué partout où un étudiant voit des bourses. File de relecture : `GET/POST /api/admin/relecture`. Sauvegarde téléchargeable : `GET /api/admin/sauvegarde`.
+- **Corrections admin protégées** : `edited_by_admin` empêche le `seed` et la collecte d'écraser une fiche corrigée dans /admin.
+- **Exigences fines des bourses** : `min_experience_years`, `statement_type` (`lettre` | `essais` | `personal_statement` | `projet_recherche`), `application_languages`. Le matching estime l'expérience d'après le CV (`matching.estimate_experience_years`) si le profil ne la donne pas ; `next_session()` alimente « À préparer pour la prochaine session » ; `widen_hint()` conseille d'élargir quand il y a moins de 10 résultats.
+- **Dates estimées** : `deadlines.deadline_info` n'affiche jamais une date reconstituée comme exacte (« Ouverture des candidatures attendue d'ici … »).
+- **Rédaction** : `app/ai/style.py` regroupe les règles de style français (tâches au style nominal, élisions, prépositions devant les établissements, compétences par catégorie). CV et lettre passent par une seconde lecture « expert » quand l'IA est active.
+- **Index** : `db._ensure_indexes()` crée les index de recherche aussi sur une base déjà en ligne. Suivi d'erreurs facultatif avec `SENTRY_DSN`.

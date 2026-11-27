@@ -68,8 +68,13 @@ def fcfa(n: int) -> str:
 
 
 def provider() -> str:
-    p = get_settings().payment_provider.strip().lower()
-    return p if p in ("cinetpay", "simulation", "manuel") else "simulation"
+    s = get_settings()
+    p = s.payment_provider.strip().lower()
+    p = p if p in ("cinetpay", "simulation", "manuel") else "simulation"
+    if p == "simulation" and s.is_production:
+        # Le faux guichet n'existe jamais en ligne : sans CinetPay, paiement par transfert validé dans /admin.
+        return "manuel"
+    return p
 
 
 def online_enabled() -> bool:

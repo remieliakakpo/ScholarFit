@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import AdminCoaching from "@/components/AdminCoaching";
 import AdminPayments from "@/components/AdminPayments";
+import AdminReview from "@/components/AdminReview";
 import AdminCredits from "@/components/docs/AdminCredits";
 import RequireAuth from "@/components/RequireAuth";
 import { Meta, Scholarship, api, getMeta } from "@/lib/api";
@@ -68,6 +69,7 @@ function Admin() {
       <h1 className="text-3xl">Administration</h1>
       {log && <pre className="card overflow-x-auto whitespace-pre-wrap p-4 text-xs">{log}</pre>}
 
+      <AdminReview />
       <AdminCoaching meta={meta} />
       <AdminPayments />
       <AdminCredits />

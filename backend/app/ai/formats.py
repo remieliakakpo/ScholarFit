@@ -160,6 +160,15 @@ def document_language(s: Scholarship | None, profile: Profile | None = None) -> 
     """Langue de la candidature : celle de la bourse, sinon le français."""
     if s is None:
         return "fr"
+    accepted = [x for x in (getattr(s, "application_languages", None) or []) if x in ("fr", "en")]
+    if accepted:
+        # Langue(s) dans lesquelles le dossier peut être rédigé, renseignées sur la fiche
+        if len(accepted) == 1:
+            return accepted[0]
+        spoken = (getattr(profile, "languages", None) or {}) if profile is not None else {}
+        if "fr" in accepted and (not spoken or "fr" in spoken):
+            return "fr"
+        return "en"
     langs = list(s.languages or [])
     countries = set(s.study_countries or [])
     if "fr" in langs and (not countries or countries & FRENCH_SPEAKING or langs[0] == "fr"):

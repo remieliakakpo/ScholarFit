@@ -18,6 +18,38 @@ from .models import User
 
 ITERATIONS = 310_000
 bearer = HTTPBearer(auto_error=False)
+_signing_key: str | None = None
+
+
+def default_secret(value: str) -> bool:
+    return value.startswith("dev-secret") or len(value) < 32
+
+
+def signing_key() -> str:
+    """Clé de signature des jetons.
+
+    En production sans SECRET_KEY valable, une clé aléatoire est créée une fois et gardée dans la base
+    (table app_settings) : la clé de développement, publique dans le code, n'est jamais utilisée en ligne.
+    """
+    global _signing_key
+    s = get_settings()
+    if not default_secret(s.secret_key) or not s.is_production:
+        return s.secret_key
+    if _signing_key is None:
+        from .db import SessionLocal
+        from .models import AppSetting
+
+        db = SessionLocal()
+        try:
+            row = db.get(AppSetting, "secret_key")
+            if row is None:
+                row = AppSetting(key="secret_key", value=os.urandom(32).hex())
+                db.add(row)
+                db.commit()
+            _signing_key = row.value
+        finally:
+            db.close()
+    return _signing_key
 
 
 def hash_password(password: str) -> str:
@@ -35,10 +67,13 @@ def verify_password(password: str, stored: str) -> bool:
         return False
 
 
-def create_token(user_id: int) -> str:
+def create_token(user: User) -> str:
+    """Jeton de session. Il contient une empreinte du mot de passe : changer de mot de passe
+    déconnecte tous les autres appareils."""
     s = get_settings()
-    payload = {"sub": str(user_id), "exp": datetime.now(timezone.utc) + timedelta(minutes=s.token_expire_minutes)}
-    return jwt.encode(payload, s.secret_key, algorithm="HS256")
+    payload = {"sub": str(user.id), "pw": _pw_fingerprint(user),
+               "exp": datetime.now(timezone.utc) + timedelta(minutes=s.token_expire_minutes)}
+    return jwt.encode(payload, signing_key(), algorithm="HS256")
 
 
 def current_user(
@@ -47,9 +82,11 @@ def current_user(
     if creds is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, t("Connexion requise", "Please sign in"))
     try:
-        payload = jwt.decode(creds.credentials, get_settings().secret_key, algorithms=["HS256"])
+        payload = jwt.decode(creds.credentials, signing_key(), algorithms=["HS256"])
         # un lien reçu par e-mail (confirmation, mot de passe oublié) n'ouvre pas de session
         user = None if "purpose" in payload else db.get(User, int(payload["sub"]))
+        if user is not None and "pw" in payload and payload["pw"] != _pw_fingerprint(user):
+            user = None  # mot de passe changé depuis : session fermée
     except (jwt.PyJWTError, KeyError, ValueError):
         user = None
     if user is None:
@@ -89,13 +126,13 @@ def create_link_token(user: User, purpose: str, minutes: int) -> str:
                "exp": datetime.now(timezone.utc) + timedelta(minutes=minutes)}
     if purpose == "reset":
         payload["pw"] = _pw_fingerprint(user)
-    return jwt.encode(payload, get_settings().secret_key, algorithm="HS256")
+    return jwt.encode(payload, signing_key(), algorithm="HS256")
 
 
 def read_link_token(token: str, purpose: str, db: Session) -> User | None:
     """Utilisateur du lien, ou None si le lien est faux, expiré ou déjà utilisé."""
     try:
-        payload = jwt.decode(token, get_settings().secret_key, algorithms=["HS256"])
+        payload = jwt.decode(token, signing_key(), algorithms=["HS256"])
         if payload.get("purpose") != purpose:
             return None
         user = db.get(User, int(payload["sub"]))

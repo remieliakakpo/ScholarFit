@@ -88,6 +88,13 @@ def deadline_info(s: Scholarship, today: date | None = None) -> DeadlineInfo:
                               "Deadline not published: see the calendar on the official website."), None)
     days = (d - today).days
     suffix = ""
+    if s.deadline_estimated and not s.verified_at:
+        # Date reconstituée d'après la session précédente : on ne l'affiche jamais comme une date exacte
+        # Statut « ouverte » (pas de badge Urgent sur une date incertaine) ; la priorité garde l'urgence pour le tri.
+        urgency = "urgente" if days <= URGENT_DAYS else "bientot" if days <= SOON_DAYS else "ouverte"
+        return DeadlineInfo("ouverte", PRIORITY[urgency], days,
+                            t(f"Ouverture des candidatures attendue d'ici {fr_month(d)}, d'après la session précédente. La date exacte n'est pas encore confirmée : vérifiez-la sur le site officiel.",
+                              f"Applications expected by {fr_month(d)}, based on the previous round. The exact date is not yet confirmed: check it on the official website."), None)
     if days == 0:
         return DeadlineInfo("urgente", 1, 0, t(f"Clôture aujourd'hui{suffix}.", f"Closes today{suffix}."), None)
     if days <= URGENT_DAYS:

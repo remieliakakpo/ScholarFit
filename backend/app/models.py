@@ -94,6 +94,17 @@ class Scholarship(Base):
     source_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     collected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Publication : « publie » (visible), « a_relire » (collectée automatiquement, attend une relecture
+    # dans /admin), « rejete ». Les fiches de départ et celles saisies dans /admin sont publiées.
+    review: Mapped[str] = mapped_column(String(12), default="publie", index=True)
+    # Modifiée à la main dans /admin : le chargement des fiches de départ ne l'écrase plus.
+    edited_by_admin: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Années d'expérience professionnelle exigées (ex. Chevening 2, Banque mondiale 3)
+    min_experience_years: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Pièce rédigée attendue : lettre | essais | personal_statement | projet_recherche
+    statement_type: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    # Langue(s) du dossier (codes ISO : fr, en, de…). Vide : déduite du pays.
+    application_languages: Mapped[list] = mapped_column(JSON, default=list)
 
     source: Mapped[Source | None] = relationship()
 
@@ -163,6 +174,8 @@ class Profile(Base):
     language_scores: Mapped[dict] = mapped_column(JSON, default=dict)  # {"IELTS": 6.5}
     experiences: Mapped[str | None] = mapped_column(Text, nullable=True)
     engagement: Mapped[str | None] = mapped_column(Text, nullable=True)
+    interests: Mapped[str | None] = mapped_column(Text, nullable=True)  # centres d'intérêt (rubrique du CV)
+    work_experience_years: Mapped[float | None] = mapped_column(Float, nullable=True)  # années d'expérience professionnelle
     project: Mapped[str | None] = mapped_column(Text, nullable=True)
     full_funding_only: Mapped[bool] = mapped_column(Boolean, default=False)
     wished_regions: Mapped[list] = mapped_column(JSON, default=list)  # afrique, europe, amerique, asie, oceanie (vide = partout)
@@ -482,3 +495,11 @@ class CoachingFile(Base):
     data: Mapped[bytes] = mapped_column(LargeBinary)
     note: Mapped[str | None] = mapped_column(String(300), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class AppSetting(Base):
+    """Réglages gardés en base (ex. clé de signature générée quand SECRET_KEY n'est pas fournie)."""
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(60), primary_key=True)
+    value: Mapped[str] = mapped_column(Text)

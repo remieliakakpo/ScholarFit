@@ -39,6 +39,7 @@ FIELDS = [
     "target_groups", "status", "eligibility", "documents_detail", "extra_documents", "apply_via",
     "application_steps", "apply_url", "link_status", "link_final_url", "deadline_estimated", "previous_deadline",
     "kind", "event_start", "event_end", "city", "remote", "duration", "source_page",
+    "min_experience_years", "statement_type", "application_languages",
 ]
 
 
@@ -123,16 +124,31 @@ def find_duplicate(db: Session, data: dict) -> Scholarship | None:
     return None
 
 
-def upsert(db: Session, record: dict, source: Source | None, verified: bool = False) -> tuple[Scholarship, bool]:
+def upsert(db: Session, record: dict, source: Source | None, verified: bool = False,
+           review: str | None = None) -> tuple[Scholarship, bool]:
+    """Ajoute ou met à jour une fiche.
+
+    - Une fiche modifiée à la main dans /admin n'est jamais écrasée par une collecte.
+    - Une fiche venue d'une autre source n'est que complétée (champs vides), jamais réécrite :
+      une annonce d'agrégateur ne remplace pas une fiche vérifiée.
+    - Une nouvelle fiche est publiée si `review="publie"` (fiches de départ, saisie admin, ReliefWeb) ;
+      sinon elle attend une relecture dans /admin (`a_relire`).
+    """
     data = clean(record)
     data["official_url"] = data["official_url"].rstrip("/")
     now = datetime.now(timezone.utc)
     existing = find_duplicate(db, data)
     if existing:
-        for k, v in data.items():
-            if v not in (None, "", [], {}) or k in ("full_funding", "deadline_estimated", "previous_deadline"):
-                setattr(existing, k, v)
         existing.collected_at = now
+        if existing.edited_by_admin:
+            return existing, False
+        same_source = source is None or existing.source_id in (None, source.id)
+        for k, v in data.items():
+            if same_source:
+                if v not in (None, "", [], {}) or k in ("full_funding", "deadline_estimated", "previous_deadline"):
+                    setattr(existing, k, v)
+            elif getattr(existing, k, None) in (None, "", [], {}) and v not in (None, "", [], {}):
+                setattr(existing, k, v)
         if verified:
             existing.verified_at = now
         return existing, False
@@ -142,6 +158,7 @@ def upsert(db: Session, record: dict, source: Source | None, verified: bool = Fa
     if db.scalars(select(Scholarship).where(Scholarship.slug == slug)).first():
         slug = f"{slug[:170]}-{slugify(data.get('organization') or 'x')[:8]}"
     s = Scholarship(slug=slug, source=source, collected_at=now, verified_at=now if verified else None, **data)
+    s.review = review or ("publie" if verified else "a_relire")
     if s.deadline and s.deadline < date.today() and not s.recurring:
         s.status = "expiree"
     db.add(s)
@@ -162,7 +179,8 @@ def run_json(db: Session, source: Source, cfg: dict) -> tuple[int, int]:
         records = json.loads((DATA_DIR / location).read_text(encoding="utf-8"))
     created = updated = 0
     for r in records:
-        _, is_new = upsert(db, r, source, verified=cfg.get("trusted", False))
+        _, is_new = upsert(db, r, source, verified=cfg.get("trusted", False) or bool(r.get("verified_at")),
+                           review="publie")
         created += is_new
         updated += not is_new
     return created, updated

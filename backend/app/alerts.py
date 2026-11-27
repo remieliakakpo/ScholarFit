@@ -19,6 +19,7 @@ from .details import content
 from .i18n import t
 from .matching import Criteria, missing_minimum, rank
 from .models import Alert, Application, Scholarship, User
+from .visibility import public_filter
 
 log = logging.getLogger("alertes")
 REMINDER_DAYS = (30, 14, 7, 3, 1)
@@ -98,7 +99,7 @@ def run_alerts(db: Session, today: date | None = None, new_since_days: int = 7) 
     today = today or date.today()
     since = datetime.now(timezone.utc) - timedelta(days=new_since_days)
     created = 0
-    scholarships = list(db.scalars(select(Scholarship).where(Scholarship.status != "expiree")))
+    scholarships = list(db.scalars(select(Scholarship).where(public_filter(), Scholarship.status != "expiree")))
     for user in db.scalars(select(User)):
         token = i18n.set_lang(user.lang or "fr")  # messages dans la langue choisie sur le site
         try:

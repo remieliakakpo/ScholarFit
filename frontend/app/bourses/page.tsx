@@ -1,6 +1,7 @@
 "use client";
 import { Suspense, useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import Icon from "@/components/Icon";
 import { REGIONS } from "@/lib/geo";
 import ScholarshipCard from "@/components/ScholarshipCard";
@@ -171,8 +172,15 @@ function Bourses() {
           <button className="btn-ghost mt-4" onClick={() => { setPage(1); setF({ ...EMPTY, kind: f.kind }); }}>{t("Effacer les filtres")}</button>
         </div>
       )}
+      {!me && data && data.total > 0 && (
+        <Link href="/connexion?mode=inscription&next=/mes-bourses" className="flex items-center gap-4 rounded-2xl bg-night p-4 text-white sm:p-5">
+          <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full border-2 border-dashed border-white/25 font-serif text-lg text-white/60">?<span className="text-xs">%</span></span>
+          <span className="min-w-0 flex-1 text-sm"><span className="font-semibold text-[#3ee0a8]">{t("Créez votre compte gratuit")}</span> {t("pour voir votre score de compatibilité sur chaque bourse et ce qu'il vous manque.")}</span>
+          <Icon name="arrow" className="h-4 w-4 shrink-0" />
+        </Link>
+      )}
       <div className="grid gap-4 2xl:grid-cols-2">
-        {data?.items.map((s) => <ScholarshipCard key={s.id} s={s} meta={meta} loggedIn={!!me} lockedScore={!me} />)}
+        {data?.items.map((s) => <ScholarshipCard key={s.id} s={s} meta={meta} loggedIn={!!me} />)}
       </div>
       {pages > 1 && (
         <div className="flex items-center justify-center gap-3">

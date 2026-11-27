@@ -4,8 +4,6 @@ import { CountryCarousel, FlagMarquee, HeroGlobe, LiveStats } from "@/components
 import Icon from "@/components/Icon";
 import Offers from "@/components/Offers";
 import Reveal from "@/components/Reveal";
-import Support from "@/components/Support";
-import KindsShowcase from "@/components/KindsShowcase";
 import { ChecklistArt } from "@/components/Illustrations";
 import { getT } from "@/lib/i18n-server";
 
@@ -78,16 +76,6 @@ export default async function Home() {
         <div className="mx-auto max-w-6xl px-2.5 sm:px-4.5"><CountryCarousel /></div>
       </section>
 
-      {/* Stages et conférences */}
-      <section id="stages" className="mx-auto max-w-6xl scroll-mt-20 px-4 pt-20 sm:px-6 sm:pt-24">
-        <Reveal>
-          <p className="eyebrow">{t("Au-delà des bourses")}</p>
-          <h2 className="mt-3 max-w-2xl text-[1.9rem] leading-tight sm:text-5xl">{t("Stages et conférences,")} <span className="accent">{t("partout dans le monde.")}</span></h2>
-          <p className="mt-4 max-w-xl text-muted">{t("Les mêmes filtres, le même score et les mêmes rappels de dates limites s'appliquent aux stages et aux conférences.")}</p>
-        </Reveal>
-        <Reveal delay={120} className="mt-10"><KindsShowcase /></Reveal>
-      </section>
-
       {/* Parcours */}
       <section id="comment" className="mx-auto max-w-6xl scroll-mt-20 px-4 py-16 sm:py-24 sm:px-6">
         <Reveal>
@@ -113,44 +101,6 @@ export default async function Home() {
             <Link href="/questionnaire" className="btn-primary shrink-0">{t("Commencer le questionnaire")} <Icon name="arrow" /></Link>
           </div>
         </Reveal>
-      </section>
-
-      {/* Fiche bourse */}
-      <section className="border-y border-line bg-surface">
-        <div className="mx-auto grid max-w-6xl items-center gap-12 px-4 py-16 sm:py-24 sm:px-6 lg:grid-cols-2">
-          <Reveal>
-            <p className="eyebrow">{t("Chaque bourse, en clair")}</p>
-            <h2 className="mt-3 text-[1.9rem] leading-tight sm:text-4xl lg:text-5xl">{t("Les conditions, les pièces,")} <span className="accent">{t("le bon lien.")}</span></h2>
-            <p className="mt-4 max-w-lg text-muted">{t("Pour chaque bourse : qui peut postuler, ce qu'elle finance, les documents à préparer, les étapes pour candidater et le lien officiel vérifié. Les dates limites proches sont signalées en priorité.")}</p>
-            <Link href="/bourses" className="btn-ghost mt-8">{t("Parcourir les bourses")} <Icon name="arrow" /></Link>
-          </Reveal>
-          <Reveal delay={120}>
-            <div className="card overflow-hidden shadow-[0_40px_80px_-40px_rgba(0,0,0,0.5)]">
-              <div className="flex items-center justify-between border-b border-line px-5 py-4">
-                <span className="text-sm font-semibold">{t("Bourse d'excellence d'un gouvernement")}</span>
-                <span className="rounded-full bg-warm-soft px-2.5 py-0.5 text-[11px] font-semibold text-warm">{t("J-12 · urgent")}</span>
-              </div>
-              <div className="grid gap-px bg-line sm:grid-cols-2">
-                <div className="bg-card p-5">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-muted">{t("Conditions")}</p>
-                  <ul className="mt-3 space-y-2 text-sm">
-                    {["Moins de 30 ans", "Licence obtenue", "Nationalité hors UE"].map((x) => <li key={x} className="flex gap-2"><Icon name="check" className="mt-0.5 h-4 w-4 text-brand" />{t(x)}</li>)}
-                  </ul>
-                </div>
-                <div className="bg-card p-5">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-muted">{t("Documents")}</p>
-                  <ul className="mt-3 space-y-2 text-sm">
-                    {["CV", "Lettre de motivation", "Relevés de notes"].map((x) => <li key={x} className="flex gap-2"><Icon name="file" className="mt-0.5 h-4 w-4 text-gold" />{t(x)}</li>)}
-                  </ul>
-                </div>
-              </div>
-              <div className="flex items-center justify-between gap-3 border-t border-line px-5 py-4">
-                <span className="flex items-center gap-2 text-xs text-muted"><span className="h-2 w-2 rounded-full bg-ok" />{t("Lien officiel vérifié")}</span>
-                <span className="text-xs text-muted">{t("Exemple")}</span>
-              </div>
-            </div>
-          </Reveal>
-        </div>
       </section>
 
       {/* Offres */}
@@ -198,10 +148,6 @@ export default async function Home() {
       </section>
 
       {/* Appel final */}
-      <section id="soutenir" className="mx-auto max-w-6xl scroll-mt-20 px-4 pb-16 sm:px-6">
-        <Reveal><Support compact /></Reveal>
-      </section>
-
       <section className="mx-auto max-w-6xl px-4 pb-24 sm:px-6">
         <Reveal>
           <div className="relative overflow-hidden rounded-[2rem] border border-line bg-card px-6 py-16 text-center sm:px-14">

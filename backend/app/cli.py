@@ -54,6 +54,8 @@ def main() -> None:
     tr = sub.add_parser("translate", help="version anglaise des fiches qui n'en ont pas (IA)")
     tr.add_argument("--limit", type=int, default=500)
     sub.add_parser("check-config", help="vérifie les réglages avant la mise en ligne")
+    ma = sub.add_parser("make-admin", help="donne les droits d'administrateur à un compte existant (adresse confirmée d'office)")
+    ma.add_argument("email")
     te = sub.add_parser("test-email", help="envoie un e-mail d'essai pour vérifier EMAIL_BACKEND")
     te.add_argument("to")
     bk = sub.add_parser("backup", help="exporte toute la base dans un fichier .json.gz (sauvegarde portable)")
@@ -105,6 +107,17 @@ def main() -> None:
             from .translate import load_seed_translations, translate_missing
 
             print(f"Fiches de départ : {load_seed_translations(db)} ; traduites par l'IA : {translate_missing(db, args.limit)}")
+        elif args.cmd == "make-admin":
+            from .models import User
+
+            u = db.scalars(select(User).where(User.email == args.email.strip().lower())).first()
+            if u is None:
+                print("Aucun compte avec cette adresse : créez d'abord le compte sur le site.")
+            else:
+                u.is_admin = True
+                u.email_verified = True
+                db.commit()
+                print(f"{u.email} est administrateur.")
         elif args.cmd == "check-config":
             from .launch import check_config
 

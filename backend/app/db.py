@@ -38,6 +38,26 @@ def init_db() -> None:
 
     Base.metadata.create_all(bind=engine)
     _add_missing_columns()
+    _ensure_indexes()
+
+
+# Index utiles aux recherches les plus fréquentes, créés aussi sur une base déjà en ligne.
+INDEXES = (
+    ("ix_scholarships_deadline", "scholarships", "deadline"),
+    ("ix_scholarships_status", "scholarships", "status"),
+    ("ix_scholarships_kind_review", "scholarships", "kind, review"),
+)
+
+
+def _ensure_indexes() -> None:
+    from sqlalchemy import inspect, text
+
+    insp = inspect(engine)
+    if not insp.has_table("scholarships"):
+        return
+    with engine.begin() as conn:
+        for name, table, cols in INDEXES:
+            conn.execute(text(f"CREATE INDEX IF NOT EXISTS {name} ON {table} ({cols})"))
 
 
 def _add_missing_columns() -> None:

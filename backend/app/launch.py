@@ -29,7 +29,10 @@ def check_config(db: Session | None = None) -> list[tuple[str, str]]:
     s = get_settings()
     out: list[tuple[str, str]] = []
     if s.secret_key.startswith("dev-secret") or len(s.secret_key) < 32:
-        out.append(("BLOQUANT", "SECRET_KEY est la valeur par défaut ou trop courte : générez-en une avec python -c \"import secrets; print(secrets.token_hex(32))\"."))
+        if s.is_production:
+            out.append(("CONSEIL", "SECRET_KEY est la valeur par défaut : le site utilise une clé aléatoire gardée dans la base (app_settings), ce qui est sûr. Pour la maîtriser vous-même, mettez votre propre clé : python -c \"import secrets; print(secrets.token_hex(32))\"."))
+        else:
+            out.append(("BLOQUANT", "SECRET_KEY est la valeur par défaut ou trop courte : générez-en une avec python -c \"import secrets; print(secrets.token_hex(32))\"."))
     if s.database_url.startswith("sqlite"):
         out.append(("BLOQUANT", "DATABASE_URL utilise SQLite : en ligne, la base serait effacée à chaque redéploiement. Utilisez PostgreSQL."))
     if not s.site_url.startswith("https://"):
@@ -37,7 +40,10 @@ def check_config(db: Session | None = None) -> list[tuple[str, str]]:
     if not s.api_public_url.startswith("https://"):
         out.append(("BLOQUANT", f"API_PUBLIC_URL = {s.api_public_url} : mettez l'adresse publique de l'API en https (notifications CinetPay)."))
     if s.payment_provider == "simulation":
-        out.append(("BLOQUANT", "PAYMENT_PROVIDER=simulation : les paiements sont factices. Mettez cinetpay avec CINETPAY_APIKEY et CINETPAY_SITE_ID."))
+        if s.is_production:
+            out.append(("BLOQUANT", "PAYMENT_PROVIDER=simulation : en ligne, le site bascule automatiquement en paiement manuel (validation dans /admin) pour éviter les paiements factices. Mettez cinetpay avec CINETPAY_APIKEY et CINETPAY_SITE_ID pour le paiement en ligne."))
+        else:
+            out.append(("BLOQUANT", "PAYMENT_PROVIDER=simulation : les paiements sont factices. Mettez cinetpay avec CINETPAY_APIKEY et CINETPAY_SITE_ID."))
     elif s.payment_provider == "cinetpay":
         if not (s.cinetpay_apikey and s.cinetpay_site_id):
             out.append(("BLOQUANT", "CINETPAY_APIKEY et CINETPAY_SITE_ID sont nécessaires (tableau de bord CinetPay > Intégrations)."))
@@ -54,8 +60,10 @@ def check_config(db: Session | None = None) -> list[tuple[str, str]]:
         out.append(("BLOQUANT", "SMTP_HOST manquant."))
     if "scholarfit.local" in s.smtp_from or "example" in s.smtp_from:
         out.append(("BLOQUANT", f"SMTP_FROM = {s.smtp_from} : mettez une adresse de votre domaine, validée chez votre service d'envoi (ex. ScholarFit <no-reply@votre-domaine.org>)."))
-    if s.demo_accounts:
-        out.append(("BLOQUANT", "DEMO_ACCOUNTS=true : les comptes de démonstration sont recréés à chaque démarrage avec leurs mots de passe publics. Mettez DEMO_ACCOUNTS=false."))
+    if s.demo_accounts and not s.is_production:
+        out.append(("CONSEIL", "DEMO_ACCOUNTS=true : pratique en local. En ligne (APP_ENV=production ou PostgreSQL), les comptes de démonstration sont désactivés automatiquement."))
+    if not s.app_env:
+        out.append(("CONSEIL", "APP_ENV vide : mettez APP_ENV=production sur Railway pour activer toutes les protections de mise en ligne (elles s'activent déjà dès que la base est PostgreSQL)."))
     if s.admin_email_list == ["admin@example.org"]:
         out.append(("BLOQUANT", "ADMIN_EMAILS vaut encore admin@example.org : mettez votre propre adresse."))
     if not any(o.startswith("https://") for o in s.cors_origin_list):
@@ -76,7 +84,7 @@ def check_config(db: Session | None = None) -> list[tuple[str, str]]:
 
 def warn_at_startup() -> None:
     """Au démarrage de l'API en production (PostgreSQL), rappelle les réglages manquants dans les logs."""
-    if get_settings().database_url.startswith("sqlite"):
+    if not get_settings().is_production:
         return
     for level, msg in check_config():
         log.warning("[%s] %s", level, msg)

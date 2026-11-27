@@ -29,7 +29,11 @@ export function HeroGlobe() {
 
 /** Carrousel des pays d'études : 4 pays visibles au plus, un pas toutes les 5 secondes, nombre exact de bourses. */
 export function CountryCarousel() {
-  const { rows, failed } = useCountryStats();
+  const { rows: allRows, failed } = useCountryStats();
+  // Un pays à 1 ou 2 bourses fait paraître la base pauvre : on n'affiche que ceux qui en ont au moins 5
+  // (sauf si trop peu de pays atteignent ce seuil).
+  const rich = (allRows ?? []).filter((r) => r.count >= 5);
+  const rows = allRows ? (rich.length >= 4 ? rich : [...allRows].sort((a, b) => b.count - a.count).slice(0, 8)) : allRows;
   const { lang, t } = useT();
   const [perView, setPerView] = useState(4);
   const [index, setIndex] = useState(0);

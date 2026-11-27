@@ -23,6 +23,7 @@ from ..i18n import t
 from ..models import Scholarship
 from ..serializers import scholarship_out
 from ..vocab import COUNTRIES
+from ..visibility import public_filter
 
 router = APIRouter(prefix="/api/seo", tags=["référencement"])
 REGIONS_EN = {"afrique": "Africa", "europe": "Europe", "amerique": "Americas", "asie": "Asia and the Middle East", "oceanie": "Oceania"}
@@ -45,7 +46,7 @@ def is_public(s: Scholarship, today: date) -> bool:
 
 def _counts(db: Session, today: date) -> dict[str, dict[str, int]]:
     out: dict[str, dict[str, int]] = {}
-    for s in db.scalars(select(Scholarship)):
+    for s in db.scalars(select(Scholarship).where(public_filter())):
         if not is_public(s, today):
             continue
         for c in set(s.study_countries or []):
@@ -77,10 +78,10 @@ def destination(slug: str, kind: str | None = Query(None, pattern="^(bourses|sta
         raise HTTPException(404, t("Destination inconnue", "Unknown destination"))
     today = date.today()
     wanted = KIND_SLUGS.get(kind) if kind else None
-    items = [s for s in db.scalars(select(Scholarship))
+    items = [s for s in db.scalars(select(Scholarship).where(public_filter()))
              if code in (s.study_countries or []) and is_public(s, today) and (wanted is None or (s.kind or "bourse") == wanted)]
     counts = {"bourse": 0, "stage": 0, "conference": 0}
-    for s in db.scalars(select(Scholarship)):
+    for s in db.scalars(select(Scholarship).where(public_filter())):
         if code in (s.study_countries or []) and is_public(s, today):
             counts[s.kind or "bourse"] = counts.get(s.kind or "bourse", 0) + 1
     info = {s.id: deadline_info(s, today) for s in items}

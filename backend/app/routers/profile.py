@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from ..ai.chat import parse_rules
 from ..ai.documents import extract_text, split_sections
 from ..db import get_db
-from ..matching import Criteria, missing_minimum, profile_completeness, rank
+from ..matching import Criteria, missing_minimum, next_session, profile_completeness, rank, widen_hint
 from ..models import Document, Profile, Scholarship, User
 from ..schemas import MatchesOut, ProfileIn, ProfileOut
 from ..security import current_user
@@ -15,6 +15,7 @@ from ..serializers import match_out
 from ..geo import REGIONS
 from ..offers import HELP_PREFERENCES
 from ..vocab import COUNTRIES, DOMAINS, LEVELS
+from ..visibility import public_filter
 
 router = APIRouter(prefix="/api", tags=["profil et matching"])
 MAX_UPLOAD = 5 * 1024 * 1024
@@ -92,6 +93,8 @@ async def upload_cv(file: UploadFile = File(...), user: User = Depends(current_u
         p.experiences = sections["experiences"][:2000]
     if not p.engagement and sections.get("engagement"):
         p.engagement = sections["engagement"][:1500]
+    if not p.interests and sections.get("centres_interet"):
+        p.interests = " ".join(sections["centres_interet"].split())[:500]
     if not p.language_scores and guessed.get("language_scores"):
         p.language_scores = guessed["language_scores"]
     db.commit()
@@ -105,9 +108,11 @@ def matches(limit: int = 30, kind: str = Query("bourse", pattern="^(bourse|stage
     missing = missing_minimum(c)
     if missing:
         return MatchesOut(minimum_ok=False, missing_minimum=missing, excluded_count=0, items=[])
-    stmt = select(Scholarship).where(Scholarship.status != "expiree")
+    stmt = select(Scholarship).where(public_filter())
     if kind != "tout":
         stmt = stmt.where(Scholarship.kind == kind)
     scholarships = list(db.scalars(stmt))
-    results, excluded = rank(scholarships, c, limit=limit)
-    return MatchesOut(minimum_ok=True, missing_minimum=[], excluded_count=excluded, items=[match_out(m) for m in results])
+    results, excluded = rank([s for s in scholarships if s.status != "expiree"], c, limit=limit)
+    later = next_session(scholarships, c)
+    return MatchesOut(minimum_ok=True, missing_minimum=[], excluded_count=excluded, items=[match_out(m) for m in results],
+                      next_session=[match_out(m) for m in later], widen_hint=widen_hint(len(results), c))
