@@ -1,6 +1,7 @@
 // Traduction de l'interface. Le français est la langue source : chaque texte sert de clé
 // et sa version anglaise est dans lib/i18n-en.ts. Un texte absent du dictionnaire reste en français.
 import EN from "./i18n-en";
+import EN_LAUNCH from "./i18n-en-launch";
 
 export type Lang = "fr" | "en";
 export const LANG_COOKIE = "sf_lang";
@@ -9,7 +10,7 @@ export const LANGS: Lang[] = ["fr", "en"];
 type Vars = Record<string, string | number | null | undefined>;
 
 export function translate(lang: Lang, fr: string, vars?: Vars): string {
-  let s = lang === "en" ? EN[fr] ?? fr : fr;
+  let s = lang === "en" ? EN[fr] ?? EN_LAUNCH[fr] ?? fr : fr;
   if (vars) s = s.replace(/\{(\w+)\}/g, (_, k) => String(vars[k] ?? ""));
   return s;
 }

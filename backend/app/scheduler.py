@@ -15,6 +15,25 @@ from .config import get_settings
 log = logging.getLogger("collecte-auto")
 _stop = threading.Event()
 _thread: threading.Thread | None = None
+_pay_thread: threading.Thread | None = None
+PAYMENT_CHECK_MINUTES = 15
+
+
+def _payments_loop() -> None:
+    """Revérifie les paiements CinetPay restés en attente (notification perdue, candidat parti avant le retour)."""
+    from .db import SessionLocal
+    from .payments import reconcile
+
+    while not _stop.wait(PAYMENT_CHECK_MINUTES * 60):
+        db = SessionLocal()
+        try:
+            r = reconcile(db)
+            if r["verifies"]:
+                log.info("Paiements revérifiés : %s", r)
+        except Exception:  # noqa: BLE001
+            log.exception("Échec de la vérification des paiements")
+        finally:
+            db.close()
 
 
 def run_cycle() -> dict:
@@ -23,6 +42,7 @@ def run_cycle() -> dict:
     from .coaching import run_reminders
     from .db import SessionLocal
     from .linkcheck import check_links
+    from .payments import reconcile
     from .scrapers.collector import expire_old, run_all
     from .translate import translate_missing
 
@@ -34,6 +54,7 @@ def run_cycle() -> dict:
         report["traductions"] = translate_missing(db, limit=100)
         report["alertes"] = run_alerts(db)
         report["rappels"] = run_reminders(db)
+        report["paiements"] = reconcile(db)
         return report
     finally:
         db.close()
@@ -50,7 +71,11 @@ def _loop(hours: float) -> None:
 
 
 def start() -> None:
-    global _thread
+    global _thread, _pay_thread
+    if _pay_thread is None and get_settings().payment_provider == "cinetpay":
+        _stop.clear()
+        _pay_thread = threading.Thread(target=_payments_loop, name="paiements", daemon=True)
+        _pay_thread.start()
     hours = get_settings().auto_collect_hours
     if hours <= 0 or _thread is not None:
         return
@@ -61,6 +86,7 @@ def start() -> None:
 
 
 def stop() -> None:
-    global _thread
+    global _thread, _pay_thread
     _stop.set()
     _thread = None
+    _pay_thread = None

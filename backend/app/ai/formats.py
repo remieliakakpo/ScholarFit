@@ -7,6 +7,7 @@ standard, aucune image ni tableau, lisible par les logiciels de tri des candidat
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 from ..i18n import is_en, t
@@ -247,3 +248,80 @@ def domain_name(code: str | None, language: str) -> str:
     if not code:
         return ""
     return DOMAINS_EN.get(code, "") if language == "en" else DOMAINS.get(code, "")
+
+
+# Nationalité : adjectif (féminin en français, accordé avec « nationalité »)
+DEMONYMS = {
+    "TG": ("togolaise", "Togolese"), "BJ": ("béninoise", "Beninese"), "BF": ("burkinabè", "Burkinabe"), "CI": ("ivoirienne", "Ivorian"),
+    "SN": ("sénégalaise", "Senegalese"), "ML": ("malienne", "Malian"), "NE": ("nigérienne", "Nigerien"), "GN": ("guinéenne", "Guinean"),
+    "CM": ("camerounaise", "Cameroonian"), "GA": ("gabonaise", "Gabonese"), "CG": ("congolaise", "Congolese"), "CD": ("congolaise", "Congolese"),
+    "TD": ("tchadienne", "Chadian"), "CF": ("centrafricaine", "Central African"), "MG": ("malgache", "Malagasy"), "MR": ("mauritanienne", "Mauritanian"),
+    "MA": ("marocaine", "Moroccan"), "DZ": ("algérienne", "Algerian"), "TN": ("tunisienne", "Tunisian"), "EG": ("égyptienne", "Egyptian"),
+    "GH": ("ghanéenne", "Ghanaian"), "NG": ("nigériane", "Nigerian"), "KE": ("kényane", "Kenyan"), "ET": ("éthiopienne", "Ethiopian"),
+    "RW": ("rwandaise", "Rwandan"), "BI": ("burundaise", "Burundian"), "UG": ("ougandaise", "Ugandan"), "TZ": ("tanzanienne", "Tanzanian"),
+    "ZA": ("sud-africaine", "South African"), "DJ": ("djiboutienne", "Djiboutian"), "KM": ("comorienne", "Comorian"), "HT": ("haïtienne", "Haitian"),
+    "GW": ("bissaoguinéenne", "Bissau-Guinean"), "CV": ("cap-verdienne", "Cape Verdean"), "GM": ("gambienne", "Gambian"), "SL": ("sierraléonaise", "Sierra Leonean"),
+    "LR": ("libérienne", "Liberian"), "ZM": ("zambienne", "Zambian"), "ZW": ("zimbabwéenne", "Zimbabwean"), "MZ": ("mozambicaine", "Mozambican"),
+    "AO": ("angolaise", "Angolan"), "SD": ("soudanaise", "Sudanese"), "SO": ("somalienne", "Somali"), "MU": ("mauricienne", "Mauritian"),
+    "FR": ("française", "French"), "BE": ("belge", "Belgian"), "CH": ("suisse", "Swiss"), "CA": ("canadienne", "Canadian"),
+    "US": ("américaine", "American"), "GB": ("britannique", "British"), "DE": ("allemande", "German"), "LB": ("libanaise", "Lebanese"),
+    "IN": ("indienne", "Indian"), "CN": ("chinoise", "Chinese"), "BR": ("brésilienne", "Brazilian"), "VN": ("vietnamienne", "Vietnamese"),
+}
+
+
+def nationality_adjective(code: str, language: str) -> str:
+    d = DEMONYMS.get(code)
+    if d:
+        return d[1] if language == "en" else d[0]
+    return country_name(code, language)
+
+
+# ------------------------------------------------------------------ nom de la bourse dans une phrase
+def short_title(s: Scholarship, language: str = "fr") -> str:
+    """Nom de la bourse sans son sous-titre : « DAAD Research Grants : doctorat en Allemagne » → « DAAD Research Grants ».
+    En anglais, le titre traduit de la fiche s'il existe."""
+    title = s.title
+    if language == "en":
+        tr = ((getattr(s, "translations", None) or {}).get("en") or {}).get("title")
+        if tr:
+            title = tr
+    title = re.split(r"\s+:\s+|\s+\(", title.strip())[0].strip()
+    return title or s.title.strip()
+
+
+def bourse_name_fr(s: Scholarship) -> str:
+    """« la bourse Eiffel », « le programme DAAD EPOS », « les bourses MasterCard »."""
+    t = short_title(s)
+    low = t.lower()
+    if low.startswith(("bourses", "programmes", "prix ")):
+        art = "les " if low.startswith(("bourses", "programmes")) else "le "
+        return art + low[0] + t[1:]
+    if low.startswith(("bourse", "allocation")):
+        return "la " + low[0] + t[1:]
+    if low.startswith(("programme", "prix", "fonds", "concours")):
+        return "le " + low[0] + t[1:]
+    return f"le programme {t}"
+
+
+def a_bourse_fr(s: Scholarship) -> str:
+    """« à la bourse Eiffel », « au programme DAAD », « aux bourses MasterCard »."""
+    name = bourse_name_fr(s)
+    if name.startswith("le "):
+        return "au " + name[3:]
+    if name.startswith("les "):
+        return "aux " + name[4:]
+    return "à " + name
+
+
+def offered_fr(s: Scholarship) -> str:
+    name = bourse_name_fr(s)
+    if name.startswith("les "):
+        return "proposées" if name[4:].lower().startswith(("bourses", "allocations")) else "proposés"
+    return "proposé" if name.startswith("le ") else "proposée"
+
+
+def bourse_name_en(s: Scholarship) -> str:
+    t = short_title(s, "en")
+    return t if t.lower().startswith("the ") else f"the {t}"
+
+

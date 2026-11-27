@@ -1,5 +1,5 @@
 // CV, lettres, compatibilité et dossiers payants : types et appels à l'API.
-import { API_URL, ApiError, CREDENTIALS, apiHeaders } from "./api";
+import { API_URL, ApiError, getToken } from "./api";
 import { clientLang, translate } from "./i18n";
 
 export type CVEntry = { title: string; organization: string; location: string; dates: string; bullets: string[] };
@@ -36,6 +36,8 @@ export type LetterData = {
   max_words?: number;
   scholarship_id: number;
   scholarship_title: string;
+  /** Remarques sur la version hors IA (langue du CV ou des réponses différente de celle de la lettre). */
+  notes?: string[];
 };
 
 export type Doc<T> = { id: number; kind: string; title: string; data: T; scholarship_id: number | null; updated_at: string | null };
@@ -89,13 +91,15 @@ export class DocError extends ApiError {
 }
 
 async function call(path: string, init: RequestInit = {}): Promise<Response> {
-  const headers = apiHeaders(init.headers);
+  const headers = new Headers(init.headers);
+  const token = getToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
   if (init.body && !(init.body instanceof FormData)) headers.set("Content-Type", "application/json");
   let res: Response;
   try {
     const lang = clientLang();
     const url = lang !== "fr" ? `${path}${path.includes("?") ? "&" : "?"}lang=${lang}` : path;
-    res = await fetch(`${API_URL}${url}`, { ...init, headers, credentials: CREDENTIALS });
+    res = await fetch(`${API_URL}${url}`, { ...init, headers });
   } catch {
     throw new DocError(0, translate(clientLang(), "Le serveur de ScholarFit ne répond pas. Réessayez dans un instant."), null);
   }

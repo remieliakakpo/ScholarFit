@@ -1,7 +1,8 @@
 """Accompagnement des candidatures : côté candidat, côté conseiller et côté administration."""
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -11,13 +12,13 @@ from ..config import get_settings
 from ..db import get_db
 from ..i18n import t
 from ..matching import profile_completeness
-from ..models import Advisor, Coaching, CoachingMeeting, CoachingMessage, CoachingStep, User
+from ..models import Advisor, Coaching, CoachingFile, CoachingMeeting, CoachingMessage, CoachingStep, User
 from ..schemas import (
     AdminCoachingOut, AdvisorAdminOut, AdvisorIn, AdvisorPublic, AdvisorUpdate, AssignIn, CloseIn,
-    CoachingDetailOut, CoachingOut, CoachingRequestIn, FeedbackIn, MeetingIn, MeetingOut, MeetingUpdate,
+    CoachingDetailOut, CoachingFileOut, CoachingOut, CoachingRequestIn, FeedbackIn, MeetingIn, MeetingOut, MeetingUpdate,
     MessageIn, MessageOut, PaymentIn, StepIn, StepOut, StepUpdate, StudentSummary,
 )
-from ..security import admin_user, current_user, verified_user
+from ..security import admin_user, current_user
 from .applications import app_out
 
 router = APIRouter(prefix="/api/accompagnement", tags=["accompagnement"])
@@ -29,7 +30,7 @@ admin_router = APIRouter(prefix="/api/admin", tags=["administration"])
 def _role(c: Coaching, user: User) -> str | None:
     if c.student_id == user.id:
         return "candidat"
-    if user.is_advisor and c.advisor_id == user.advisor.id:  # un conseiller désactivé perd l'accès aux dossiers
+    if user.advisor is not None and c.advisor_id == user.advisor.id:
         return "conseiller"
     if user.is_admin:
         return "admin"
@@ -128,7 +129,7 @@ def my_coachings(user: User = Depends(current_user), db: Session = Depends(get_d
 
 
 @router.post("", response_model=CoachingOut, status_code=201)
-def request_coaching(body: CoachingRequestIn, user: User = Depends(verified_user), db: Session = Depends(get_db)):
+def request_coaching(body: CoachingRequestIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
     """Demande d'accompagnement. Un seul accompagnement ouvert à la fois."""
     if not body.share_consent:
         raise HTTPException(422, "Votre accord est nécessaire : le conseiller doit voir votre profil, votre CV et vos candidatures pour vous aider.")
@@ -167,7 +168,7 @@ def request_coaching(body: CoachingRequestIn, user: User = Depends(verified_user
 @router.get("/conseiller", response_model=list[CoachingOut])
 def advisor_coachings(user: User = Depends(current_user), db: Session = Depends(get_db)):
     """Espace conseiller : les candidats suivis, les plus récents d'abord."""
-    if not user.is_advisor:
+    if user.advisor is None:
         raise HTTPException(403, "Réservé aux conseillers")
     cs = db.scalars(select(Coaching).where(Coaching.advisor_id == user.advisor.id).order_by(Coaching.updated_at.desc()))
     return [_out(c, "conseiller") for c in cs]
@@ -206,7 +207,86 @@ def detail(cid: int, user: User = Depends(current_user), db: Session = Depends(g
         c, role, CoachingDetailOut,
         steps=[StepOut.model_validate(s) for s in c.steps], messages=messages,
         meetings=[MeetingOut.model_validate(m) for m in c.meetings], student=student, applications=apps,
+        files=[_file_out(f, user) for f in _files(db, c)],
     )
+
+
+# ---------- Documents échangés ----------
+FILE_TYPES = {
+    "application/pdf": ".pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+    "application/msword": ".doc",
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+}
+FILE_MAX = 8 * 1024 * 1024
+FILE_CATEGORIES = ("livrable", "piece", "preuve_depot")
+
+
+def _files(db: Session, c: Coaching) -> list[CoachingFile]:
+    return list(db.scalars(select(CoachingFile).where(CoachingFile.coaching_id == c.id).order_by(CoachingFile.created_at.desc())))
+
+
+def _file_out(f: CoachingFile, user: User) -> CoachingFileOut:
+    return CoachingFileOut(id=f.id, author_role=f.author_role, category=f.category, filename=f.filename,
+                           content_type=f.content_type, size=f.size, note=f.note, created_at=f.created_at,
+                           mine=f.author_id == user.id)
+
+
+@router.post("/{cid}/fichiers", response_model=CoachingFileOut, status_code=201)
+async def upload_file(cid: int, file: UploadFile = File(...), category: str = Form("piece"), note: str = Form(""),
+                      user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Le candidat envoie une pièce ; l'expert livre un document ou la preuve de dépôt (PDF, Word, image, 8 Mo au plus)."""
+    c, role = _get(cid, user, db)
+    _require_open(c)
+    if category not in FILE_CATEGORIES:
+        raise HTTPException(422, t("Type de document inconnu", "Unknown document type"))
+    if category in ("livrable", "preuve_depot") and role == "candidat":
+        raise HTTPException(403, t("Seul l'expert livre les documents finaux.", "Only the expert can deliver final documents."))
+    ctype = (file.content_type or "").split(";")[0].strip().lower()
+    if ctype not in FILE_TYPES:
+        raise HTTPException(415, t("Formats acceptés : PDF, Word, JPG ou PNG.", "Accepted formats: PDF, Word, JPG or PNG."))
+    data = await file.read(FILE_MAX + 1)
+    if len(data) > FILE_MAX:
+        raise HTTPException(413, t("Le fichier dépasse 8 Mo.", "The file is larger than 8 MB."))
+    if not data:
+        raise HTTPException(422, t("Le fichier est vide.", "The file is empty."))
+    name = "".join(ch for ch in (file.filename or "document") if ch.isalnum() or ch in " ._-()").strip()[:150] or "document"
+    if not name.lower().endswith(FILE_TYPES[ctype]) and not (ctype == "image/jpeg" and name.lower().endswith(".jpeg")):
+        name += FILE_TYPES[ctype]
+    f = CoachingFile(coaching_id=c.id, author_id=user.id, author_role=role, category=category, filename=name,
+                     content_type=ctype, size=len(data), data=data, note=note.strip()[:300] or None)
+    db.add(f)
+    db.flush()
+    other = _other_party(c, role)
+    if other is not None:
+        label = {"livrable": "Nouveau document livré par votre expert", "preuve_depot": "Votre candidature a été déposée : la preuve de dépôt est disponible",
+                 "piece": f"{_student_name(c)} a envoyé une pièce"}[category]
+        svc.notify(db, other, f"acc-fichier-{f.id}", f"{label} : {name}.")
+    db.commit()
+    return _file_out(f, user)
+
+
+@router.get("/{cid}/fichiers/{fid}")
+def download_file(cid: int, fid: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    c, _role = _get(cid, user, db)
+    f = db.get(CoachingFile, fid)
+    if f is None or f.coaching_id != c.id:
+        raise HTTPException(404, t("Document introuvable", "Document not found"))
+    safe = f.filename.replace('"', "")
+    return Response(f.data, media_type=f.content_type, headers={"Content-Disposition": f'attachment; filename="{safe}"'})
+
+
+@router.delete("/{cid}/fichiers/{fid}", status_code=204)
+def delete_file(cid: int, fid: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    c, role = _get(cid, user, db)
+    f = db.get(CoachingFile, fid)
+    if f is None or f.coaching_id != c.id:
+        raise HTTPException(404, t("Document introuvable", "Document not found"))
+    if f.author_id != user.id and role != "admin":
+        raise HTTPException(403, t("Vous ne pouvez supprimer que vos propres documents.", "You can only delete your own documents."))
+    db.delete(f)
+    db.commit()
 
 
 @router.post("/{cid}/annuler", response_model=CoachingOut)

@@ -1,6 +1,6 @@
 from datetime import date
 
-from tests.conftest import register, login
+from tests.conftest import login
 
 
 def test_health(client):
@@ -22,7 +22,9 @@ def test_catalogue_filters(client):
 
 
 def test_register_profile_minimum_and_matching(client):
-    h = register(client, "nouveau@example.org")
+    r = client.post("/api/auth/register", json={"email": "nouveau@example.org", "password": "motdepasse1"})
+    assert r.status_code == 201
+    h = {"Authorization": f"Bearer {r.json()['access_token']}"}
     r = client.get("/api/matches", headers=h)
     assert r.json()["minimum_ok"] is False
     assert set(r.json()["missing_minimum"]) == {"nationalité", "âge", "niveau visé", "domaine"}
@@ -88,6 +90,7 @@ def test_admin_rights(client, demo, admin):
 
 
 def test_delete_account(client):
-    h = register(client, "efface@example.org")
+    r = client.post("/api/auth/register", json={"email": "efface@example.org", "password": "motdepasse1"})
+    h = {"Authorization": f"Bearer {r.json()['access_token']}"}
     assert client.delete("/api/auth/me", headers=h).status_code == 204
     assert client.get("/api/auth/me", headers=h).status_code == 401

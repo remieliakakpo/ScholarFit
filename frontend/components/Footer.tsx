@@ -4,9 +4,9 @@ import { Logo } from "./Icon";
 import { useT } from "./LangProvider";
 
 const COLS: { t: string; links: [string, string][] }[] = [
-  { t: "Explorer", links: [["/bourses", "Bourses d'études"], ["/bourses?kind=stage", "Stages"], ["/bourses?kind=conference", "Conférences"], ["/questionnaire", "Mon profil en 5 étapes"]] },
+  { t: "Explorer", links: [["/bourses", "Bourses d'études"], ["/bourses?kind=stage", "Stages"], ["/bourses?kind=conference", "Conférences"], ["/destinations", "Bourses par pays"], ["/questionnaire", "Mon profil en 5 étapes"]] },
   { t: "Mon espace", links: [["/mes-bourses", "Mes bourses"], ["/suivi", "Suivi des candidatures"], ["/cv", "Mon CV"], ["/profil", "Mon profil"]] },
-  { t: "ScholarFit", links: [["/#comment", "Comment ça marche"], ["/accompagnement", "Accompagnement"], ["/#offres", "Tarifs"], ["/#questions", "Questions fréquentes"], ["/soutenir", "Soutenir le site"], ["/confidentialite", "Confidentialité"]] },
+  { t: "ScholarFit", links: [["/a-propos", "À propos"], ["/#comment", "Comment ça marche"], ["/accompagnement", "Accompagnement"], ["/#offres", "Tarifs"], ["/#questions", "Questions fréquentes"], ["/soutenir", "Soutenir le site"]] },
 ];
 
 /** Pied de page commun au site public et à l'espace connecté. */
@@ -32,7 +32,11 @@ export default function Footer({ loggedIn }: { loggedIn: boolean }) {
       <div className="border-t border-line">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-5 text-xs text-muted sm:px-6">
           <span>© {new Date().getFullYear()} ScholarFit. {t("Tous droits réservés.")}</span>
-          <span>{t("Offres mises à jour automatiquement chaque semaine.")}</span>
+          <nav className="flex flex-wrap items-center gap-x-4 gap-y-1" aria-label={t("Informations légales")}>
+            <Link href="/conditions" className="hover:text-brand">{t("Conditions d'utilisation")}</Link>
+            <Link href="/confidentialite" className="hover:text-brand">{t("Confidentialité")}</Link>
+            <span>{t("Offres mises à jour automatiquement chaque semaine.")}</span>
+          </nav>
         </div>
       </div>
     </footer>

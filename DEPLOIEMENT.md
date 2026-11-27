@@ -98,7 +98,10 @@ Les clés se mettent dans `backend/.env` en local et dans les **Variables** de R
 - `RELIEFWEB_APPNAME` : nom d'application pour les stages des organisations internationales. Gratuit : formulaire sur apidoc.reliefweb.int, réponse par e-mail sous deux jours ouvrés. Mettre ensuite le nom reçu, exactement.
 - `AI_DISCOVERY_ENABLED` : mettre `false` si vous n'avez pas de crédit IA.
 - `CORS_ORIGINS` : adresse du site Vercel (voir parties 6 et 7).
-- `DATABASE_URL` : base de données (voir 6.5).
+- `DATABASE_URL` : base de données (voir 6.5). En ligne, PostgreSQL est obligatoire.
+- `SITE_URL` et `API_PUBLIC_URL` : adresses publiques du site et de l'API, en https (voir 8.1).
+- `PAYMENT_PROVIDER`, `CINETPAY_APIKEY`, `CINETPAY_SITE_ID`, `CINETPAY_SECRET_KEY` : paiement en ligne (voir 8.3).
+- `EMAIL_BACKEND`, `SMTP_FROM`, `BREVO_API_KEY` : envoi des e-mails (voir 8.4).
 
 Si vous avez perdu votre `.env`, rien de grave : on recrée la clé secrète, la clé IA et le nom ReliefWeb. Seuls les comptes de test d'une base locale sont perdus. Sans aucune clé IA, le site fonctionne en mode hors-ligne (règles et modèles), sans génération IA de CV, lettres, diagnostics ni découverte de bourses par IA.
 
@@ -129,7 +132,7 @@ Dans les **Deploy Logs**, cherchez `Uvicorn running on http://0.0.0.0:8000` et `
 Par défaut, la base est un fichier SQLite dans le conteneur : elle est effacée à chaque redéploiement, donc comptes et dossiers aussi. Pour la conserver : dans Railway, New > Database > PostgreSQL, puis copiez son lien de connexion dans la variable `DATABASE_URL` du serveur (au format `postgresql+psycopg://...`). Le Dockerfile installe déjà le pilote Postgres.
 
 ### 6.6 Sécurité après le premier démarrage
-Les comptes de démonstration (`admin@example.org`, `demo@example.org`, `conseiller@example.org`) ont des mots de passe écrits dans le code et donc publics. Avant de partager le site : changez-les ou supprimez-les, et définissez `ADMIN_EMAILS` avec votre vraie adresse.
+Les comptes de démonstration (`admin@example.org`, `demo@example.org`, `conseiller@example.org`) ont des mots de passe écrits dans le code et donc publics. Ils sont recréés à chaque démarrage tant que `DEMO_ACCOUNTS=true`. Avant de partager le site : mettez `DEMO_ACCOUNTS=false`, supprimez-les depuis l'API ou la base, et définissez `ADMIN_EMAILS` avec votre vraie adresse. Pour que les e-mails de confirmation et de mot de passe oublié partent vraiment, ajoutez aussi `SITE_URL` (adresse publique du site) et les variables `SMTP_*` (voir le README).
 
 ## 7. Déployer le site sur Vercel
 
@@ -151,15 +154,87 @@ Les comptes de démonstration (`admin@example.org`, `demo@example.org`, `conseil
 | « Le serveur de ScholarFit ne répond pas » sur la page de connexion | Le site n'atteint pas le backend | Tester `/docs` sur Railway ; vérifier les deux variables Vercel ; Redeploy sans cache |
 | Page qui charge mais données vides ou erreurs réseau | `CORS_ORIGINS` absent ou faux | Mettre l'adresse exacte du site Vercel dans Railway |
 
-## 8. Test final
+## 8. Avant d'ouvrir le site au public
+
+Une commande fait le tour de tous les réglages et dit ce qui manque. Dans Railway : service backend > ⋯ > **Shell** (ou en local, avec le `.env` de production) :
+
+```
+python -m app.cli check-config
+```
+
+Chaque ligne `[BLOQUANT]` doit être corrigée avant d'annoncer le site. Les lignes `[CONSEIL]` sont facultatives. Au démarrage, l'API écrit aussi ces avertissements dans les Deploy Logs tant qu'ils ne sont pas réglés.
+
+### 8.1 Nom de domaine et HTTPS
+1. Achetez un nom de domaine (par exemple `scholarfit.tg` ou `scholarfit.org`) chez un registraire (OVH, Namecheap, Gandi…).
+2. **Site** : Vercel > projet > Settings > Domains > Add, tapez `www.votre-domaine.org`. Vercel affiche l'enregistrement DNS à créer chez le registraire (un `CNAME` vers `cname.vercel-dns.com`). Ajoutez aussi le domaine nu `votre-domaine.org`, Vercel le redirige vers `www`.
+3. **API** : Railway > service backend > Settings > Networking > Custom Domain, tapez `api.votre-domaine.org` et créez le `CNAME` indiqué.
+4. Le certificat HTTPS est fourni et renouvelé automatiquement par Vercel et Railway (quelques minutes après la mise à jour du DNS). Rien à installer.
+5. Variables à mettre à jour ensuite :
+   - Railway : `SITE_URL=https://www.votre-domaine.org`, `API_PUBLIC_URL=https://api.votre-domaine.org`, `CORS_ORIGINS=https://www.votre-domaine.org`
+   - Vercel : `API_URL_INTERNAL` et `NEXT_PUBLIC_API_URL` = `https://api.votre-domaine.org`, `NEXT_PUBLIC_SITE_URL=https://www.votre-domaine.org`, puis Redeploy.
+
+### 8.2 Base PostgreSQL et sauvegardes
+1. Railway : New > Database > PostgreSQL. Copiez son lien de connexion (`DATABASE_URL` du service PostgreSQL) dans la variable `DATABASE_URL` du backend, tel quel.
+2. Les tables sont créées au premier démarrage. Les nouvelles colonnes des versions suivantes sont ajoutées automatiquement.
+3. **Sauvegardes** : Railway > PostgreSQL > Backups (sauvegardes automatiques selon votre offre). En plus, une sauvegarde portable se fait depuis votre ordinateur, une fois par semaine, avec le `DATABASE_URL` de production dans `backend/.env` :
+   ```
+   python -m app.cli backup --dir sauvegardes
+   ```
+   Le fichier `sauvegardes/scholarfit-AAAAMMJJ-HHMM.json.gz` contient toutes les tables ; les 14 dernières sont gardées. Rangez-le aussi sur un disque ou un Drive.
+
+### 8.3 Paiement en ligne avec CinetPay
+1. Créez un compte marchand sur cinetpay.com (pièces de l'entreprise demandées, validation en quelques jours).
+2. Tableau de bord CinetPay > **Intégrations** : notez l'`API KEY`, le `SITE ID` et la `SECRET KEY`.
+3. Railway > Variables :
+   - `PAYMENT_PROVIDER=cinetpay`
+   - `CINETPAY_APIKEY`, `CINETPAY_SITE_ID`, `CINETPAY_SECRET_KEY`
+   - `API_PUBLIC_URL` doit être l'adresse https de l'API : CinetPay y envoie la confirmation de chaque paiement (`/api/payments/cinetpay/notify`).
+4. Rien à déclarer chez CinetPay : l'adresse de notification et l'adresse de retour sont envoyées avec chaque paiement.
+5. **Essai réel** : payez un abonnement de 2 500 F CFA avec votre propre numéro. La page « Paiement confirmé » s'affiche, le reçu arrive par e-mail et le paiement apparaît dans /admin > Paiements en ligne.
+
+Ce qui se paie en ligne : l'abonnement CV et lettres (2 500 F CFA par mois) et les offres d'accompagnement Standard (15 000 F CFA) et Premium (35 000 F CFA). Le paiement par transfert sur vos numéros Flooz et Mixx by Yas reste proposé en dessous, avec validation manuelle dans /admin.
+
+En local, `PAYMENT_PROVIDER=simulation` (valeur par défaut) affiche un guichet d'essai : on peut tester tout le parcours sans argent. Avec `PAYMENT_PROVIDER=manuel`, seul le paiement par transfert est proposé.
+
+Si un candidat ferme la page avant le retour, rien n'est perdu : l'API revérifie toutes les 15 minutes les paiements CinetPay restés en attente et active l'accès dès qu'ils sont confirmés.
+
+### 8.4 E-mails (compte, rappels, reçus, accompagnement)
+Le site envoie : la confirmation de l'adresse et le lien « mot de passe oublié », les rappels avant les dates limites (J-30, J-14, J-7, J-3, J-1), les nouvelles bourses qui correspondent au profil (un seul e-mail groupé), les reçus de paiement et les messages d'accompagnement (au plus un e-mail toutes les 30 minutes par personne).
+
+Le plus simple est **Brevo** (gratuit jusqu'à 300 e-mails par jour) :
+1. Créez un compte sur brevo.com, puis Senders, Domains & Dedicated IPs > Domains > ajoutez votre domaine et créez chez le registraire les enregistrements DNS indiqués (DKIM, DMARC). Sans cette étape, les e-mails partent en indésirables.
+2. SMTP & API > API Keys > Generate a new API key.
+3. Railway > Variables : `EMAIL_BACKEND=brevo`, `BREVO_API_KEY=…`, `SMTP_FROM=ScholarFit <no-reply@votre-domaine.org>`, `EMAIL_REPLY_TO=contact@votre-domaine.org`.
+4. Essai : `python -m app.cli test-email votre.adresse@gmail.com`.
+
+Autres possibilités : `EMAIL_BACKEND=resend` avec `RESEND_API_KEY`, ou le SMTP de votre choix avec `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` (Gmail : mot de passe d'application, port 587). Sans aucun réglage, les e-mails et leurs liens s'affichent dans la fenêtre de l'API, ce qui suffit en local. Dans tous les cas, l'expéditeur est `SMTP_FROM`.
+
+Chaque envoi est enregistré dans la table `email_log` (date, destinataire, objet, succès ou erreur).
+
+### 8.5 Collecte hebdomadaire
+Rien à planifier : l'API relance la collecte toutes les 24 heures (`AUTO_COLLECT_HOURS=24`) et chaque source n'est relue qu'une fois par semaine. Chaque passage retire les offres expirées, teste les liens officiels (une offre dont le lien est mort disparaît du site et apparaît dans /admin > Liens cassés), envoie les rappels et revérifie les paiements.
+
+Avec plusieurs copies de l'API, laissez `AUTO_COLLECT_HOURS=24` sur une seule et mettez `0` sur les autres.
+
+### 8.6 Pages légales et référencement
+- Renseignez dans Vercel `NEXT_PUBLIC_COMPANY_NAME`, `NEXT_PUBLIC_COMPANY_ADDRESS`, `NEXT_PUBLIC_CONTACT_EMAIL` et `NEXT_PUBLIC_CONTACT_PHONE` : ils s'affichent dans À propos, Conditions d'utilisation et Confidentialité.
+- Relisez `/conditions` (en particulier la règle de remboursement) et `/confidentialite`, puis faites-les valider si possible par un juriste.
+- Google Search Console : ajoutez le domaine, puis Sitemaps > `https://www.votre-domaine.org/sitemap.xml`. Le plan liste les pages pays (`/destinations/france`, `/destinations/france/bourses`…) et toutes les fiches.
+
+### 8.7 Comptes de démonstration
+Mettez `DEMO_ACCOUNTS=false` et votre adresse dans `ADMIN_EMAILS`. `python -m app.cli check-config` signale aussi les comptes de démonstration dont le mot de passe public n'a pas été changé.
+
+## 9. Test final
 
 1. Ouvrez l'adresse Vercel : la page d'accueil s'affiche.
 2. La liste des bourses se remplit (98 au départ, plus la collecte automatique).
 3. Créez un compte et connectez-vous.
 4. Les fonctions IA (CV, lettres, compatibilité) ne marchent que si la clé IA est valide **et** le compte a du crédit ; sinon le site utilise le mode hors-ligne.
 5. Les stages des organisations internationales apparaissent après l'ajout de `RELIEFWEB_APPNAME`.
+6. Payez un abonnement : la page « Paiement confirmé » s'affiche et le reçu arrive par e-mail.
+7. Ouvrez `/destinations`, `/conditions`, `/confidentialite`, `/sitemap.xml` et `/robots.txt`.
 
-## 9. Check-list rapide en cas de problème
+## 10. Check-list rapide en cas de problème
 
 1. Railway : le dernier déploiement est-il « Active » ? Que disent les Deploy Logs ?
 2. `https://VOTRE-DOMAINE.up.railway.app/docs` s'affiche-t-il ?

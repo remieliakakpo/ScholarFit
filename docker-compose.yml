@@ -1,15 +1,12 @@
-# Lance toute la plateforme : PostgreSQL + API + site, configurée comme en production.
-#   SECRET_KEY=$(python -c "import secrets; print(secrets.token_urlsafe(48))") docker compose up --build
-#   (ou mettre SECRET_KEY, POSTGRES_PASSWORD, FRONTEND_URL… dans un fichier .env à côté de ce fichier)
-# Site : http://localhost:3000. Aucun compte de démo : créer l'administrateur avec
-#   docker compose exec api python -m app.cli create-admin vous@exemple.org
-# Pour essayer avec les comptes de démo : APP_ENV=dev docker compose up --build
+# Lance toute la plateforme : PostgreSQL + API + site.
+#   docker compose up --build
+# Site : http://localhost:3000   API : http://localhost:8000/docs
 services:
   db:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: bourses
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bourses}
+      POSTGRES_PASSWORD: bourses
       POSTGRES_DB: bourses
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -21,25 +18,23 @@ services:
   api:
     build: ./backend
     environment:
-      DATABASE_URL: postgresql+psycopg://bourses:${POSTGRES_PASSWORD:-bourses}@db:5432/bourses
-      APP_ENV: ${APP_ENV:-production}
-      # Obligatoire : l'API refuse de démarrer sans un secret aléatoire d'au moins 32 caractères
-      SECRET_KEY: ${SECRET_KEY:?Définissez SECRET_KEY (32 caractères aléatoires au moins)}
-      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
-      CORS_ORIGINS: ${FRONTEND_URL:-http://localhost:3000}
+      DATABASE_URL: postgresql+psycopg://bourses:bourses@db:5432/bourses
+      SECRET_KEY: ${SECRET_KEY:-change-moi-en-production-avec-une-longue-chaine}
+      CORS_ORIGINS: http://localhost:3000
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      ADMIN_EMAILS: ${ADMIN_EMAILS:-}
-      # L'API n'est joignable que par le site (réseau Docker interne) : on croit son X-Forwarded-For
-      TRUSTED_PROXIES: "*"
-      SMTP_HOST: ${SMTP_HOST:-}
-      SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_USER: ${SMTP_USER:-}
-      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      ADMIN_EMAILS: ${ADMIN_EMAILS:-admin@example.org}
+      SITE_URL: ${SITE_URL:-http://localhost:3000}
+      API_PUBLIC_URL: ${API_PUBLIC_URL:-http://localhost:8000}
+      PAYMENT_PROVIDER: ${PAYMENT_PROVIDER:-simulation}
+      CINETPAY_APIKEY: ${CINETPAY_APIKEY:-}
+      CINETPAY_SITE_ID: ${CINETPAY_SITE_ID:-}
+      CINETPAY_SECRET_KEY: ${CINETPAY_SECRET_KEY:-}
+      EMAIL_BACKEND: ${EMAIL_BACKEND:-}
       SMTP_FROM: ${SMTP_FROM:-ScholarFit <no-reply@example.org>}
-    # Pas de port publié : le navigateur passe par le site (/api relayé par Next.js).
-    # Pour regarder l'API depuis la machine : décommenter (adresse locale seulement).
-    # ports:
-    #   - "127.0.0.1:8000:8000"
+      BREVO_API_KEY: ${BREVO_API_KEY:-}
+      RELIEFWEB_APPNAME: ${RELIEFWEB_APPNAME:-}
+    ports:
+      - "8000:8000"
     depends_on:
       db:
         condition: service_healthy
@@ -47,8 +42,11 @@ services:
   web:
     build:
       context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000
     environment:
       API_URL_INTERNAL: http://api:8000
+      NEXT_PUBLIC_SITE_URL: ${SITE_URL:-http://localhost:3000}
     ports:
       - "3000:3000"
     depends_on:

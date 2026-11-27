@@ -125,18 +125,7 @@ def find_duplicate(db: Session, data: dict) -> Scholarship | None:
 
 def upsert(db: Session, record: dict, source: Source | None, verified: bool = False) -> tuple[Scholarship, bool]:
     data = clean(record)
-    from ..netguard import http_url
-
-    official = http_url(data.get("official_url"))  # ValueError : fiche écartée par l'appelant
-    if not official:
-        raise ValueError("lien officiel manquant")
-    data["official_url"] = official.rstrip("/")
-    for k in ("apply_url", "source_page", "link_final_url"):
-        if k in data:
-            try:
-                data[k] = http_url(data[k])
-            except ValueError:
-                data[k] = None
+    data["official_url"] = data["official_url"].rstrip("/")
     now = datetime.now(timezone.utc)
     existing = find_duplicate(db, data)
     if existing:
@@ -173,11 +162,7 @@ def run_json(db: Session, source: Source, cfg: dict) -> tuple[int, int]:
         records = json.loads((DATA_DIR / location).read_text(encoding="utf-8"))
     created = updated = 0
     for r in records:
-        try:
-            _, is_new = upsert(db, r, source, verified=cfg.get("trusted", False))
-        except ValueError as e:
-            log.warning("Fiche écartée (%s) : %s", e, r.get("title"))
-            continue
+        _, is_new = upsert(db, r, source, verified=cfg.get("trusted", False))
         created += is_new
         updated += not is_new
     return created, updated
@@ -231,11 +216,7 @@ def _crawl_detail_pages(db: Session, source: Source, urls: list[str], fetcher: P
                 record["organization"] = org_from_url(record["official_url"]) or source.name
         if kind and not record.get("kind"):
             record["kind"] = kind
-        try:
-            _, is_new = upsert(db, record, source)
-        except ValueError as e:
-            log.warning("Fiche écartée (%s) : %s", e, url)
-            continue
+        _, is_new = upsert(db, record, source)
         created += is_new
         updated += not is_new
     return created, updated

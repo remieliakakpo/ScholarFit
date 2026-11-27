@@ -18,14 +18,14 @@ from __future__ import annotations
 import re
 from datetime import date
 
-from ..i18n import is_en
+from ..i18n import is_en, t
 from ..models import Profile, Scholarship
 from ..vocab import DOMAINS
 from . import writing
 from .client import ask_json
-from .cv import ACTION_VERBS_EN, ACTION_VERBS_FR, EN_MONTHS, FR_MONTHS, THEMES, _clean_line, apply_weak_start, detect_themes
+from .cv import ACTION_VERBS_EN, ACTION_VERBS_FR, EN_MONTHS, FR_MONTHS, THEMES, _clean_line, _object_after, apply_weak_start, detect_themes
 from .documents import split_sections
-from .formats import country_name, domain_name, letter_style
+from .formats import a_bourse_fr, bourse_name_en, bourse_name_fr, country_name, domain_name, letter_style, offered_fr, short_title
 
 QUESTIONS_EN = {
     "target_program": "Programme or university you are aiming for",
@@ -76,42 +76,6 @@ def _date_text(style: str, today: date) -> str:
     return f"{today.day} {EN_MONTHS[today.month - 1]} {today.year}"
 
 
-def bourse_name_fr(s: Scholarship) -> str:
-    """« la bourse Eiffel », « le programme DAAD EPOS », « les bourses MasterCard »."""
-    t = s.title.strip()
-    low = t.lower()
-    if low.startswith(("bourses", "programmes", "prix ")):
-        art = "les " if low.startswith(("bourses", "programmes")) else "le "
-        return art + low[0] + t[1:]
-    if low.startswith(("bourse", "allocation")):
-        return "la " + low[0] + t[1:]
-    if low.startswith(("programme", "prix", "fonds", "concours")):
-        return "le " + low[0] + t[1:]
-    return f"le programme {t}"
-
-
-def a_bourse_fr(s: Scholarship) -> str:
-    """« à la bourse Eiffel », « au programme DAAD », « aux bourses MasterCard »."""
-    name = bourse_name_fr(s)
-    if name.startswith("le "):
-        return "au " + name[3:]
-    if name.startswith("les "):
-        return "aux " + name[4:]
-    return "à " + name
-
-
-def offered_fr(s: Scholarship) -> str:
-    name = bourse_name_fr(s)
-    if name.startswith("les "):
-        return "proposées" if name[4:].lower().startswith(("bourses", "allocations")) else "proposés"
-    return "proposé" if name.startswith("le ") else "proposée"
-
-
-def bourse_name_en(s: Scholarship) -> str:
-    t = s.title.strip()
-    return t if t.lower().startswith("the ") else f"the {t}"
-
-
 def build_header(p: Profile, s: Scholarship, email: str | None, language: str, answers: dict, today: date | None = None) -> dict:
     today = today or date.today()
     style = letter_style(s, language)
@@ -126,7 +90,11 @@ def build_header(p: Profile, s: Scholarship, email: str | None, language: str, a
         sender.append(p.phone)
     if email:
         sender.append(email)
-    recipient = ["Comité de sélection" if style == "fr" else "Selection Committee", s.organization]
+    if style == "fr":
+        recipient = ["Comité de sélection", s.organization]
+    else:
+        # Organisme au nom français dans la fiche : le nom (traduit) de la bourse le remplace dans une lettre anglaise
+        recipient = ["Selection Committee", s.organization if s.organization and not _FR_ORG.search(s.organization) else short_title(s, "en")]
     if answers.get("recipient_address"):
         recipient += [l.strip() for l in answers["recipient_address"].splitlines() if l.strip()]
     dt = _date_text(style, today)
@@ -169,7 +137,6 @@ def cv_highlights(cv_text: str | None, language: str, limit: int = 2) -> list[st
     return lines[:limit]
 
 
-# ------------------------------------------------------------------ modèle hors-ligne
 def at_institution(name: str, language: str) -> str:
     if language == "en":
         return f"at {name}"
@@ -206,100 +173,492 @@ def _integrate(answer: str, lead: str, fragment_prefix: str, language: str) -> s
     return f"{lead} {sentences}".strip() if lead else sentences
 
 
-def letter_template(p: Profile, s: Scholarship, answers: dict, language: str, max_words: int) -> list[str]:
+# ------------------------------------------------------------------ parcours tiré du CV
+_MONTHS_IN = {"jan": 1, "janv": 1, "janvier": 1, "january": 1, "fév": 2, "fev": 2, "févr": 2, "fevr": 2, "février": 2, "fevrier": 2, "feb": 2, "february": 2,
+              "mars": 3, "mar": 3, "march": 3, "avr": 4, "avril": 4, "apr": 4, "april": 4, "mai": 5, "may": 5, "juin": 6, "jun": 6, "june": 6,
+              "juil": 7, "juillet": 7, "jul": 7, "july": 7, "août": 8, "aout": 8, "aug": 8, "august": 8, "sept": 9, "sep": 9, "septembre": 9, "september": 9,
+              "oct": 10, "octobre": 10, "october": 10, "nov": 11, "novembre": 11, "november": 11, "déc": 12, "dec": 12, "décembre": 12, "decembre": 12, "december": 12}
+_ONGOING = re.compile(r"aujourd|présent|present|en cours|current|now|ce jour|actuel", re.I)
+
+
+def _point(text: str) -> tuple[int | None, int | None]:
+    m = re.search(r"(?:([A-Za-zéûÉ]+)\.?\s+|(\d{1,2})/)?((?:19|20)\d\d)", text)
+    if not m:
+        return None, None
+    month = None
+    if m.group(1):
+        month = _MONTHS_IN.get(m.group(1).lower().rstrip("."))
+    elif m.group(2):
+        month = int(m.group(2)) if 1 <= int(m.group(2)) <= 12 else None
+    return month, int(m.group(3))
+
+
+def parse_range(dates: str) -> dict:
+    """« Avr. 2023 - Avr. 2026 » → début, fin, en cours ; tolère « 2024 - 2026 » et « 2022 - présent »."""
+    d = (dates or "").strip()
+    parts = re.split(r"\s+[-–—à]\s+|\s*[-–—]\s*(?=[A-Za-zÀ-ÿ]+\.?\s+\d|\d{4}|aujourd|présent|present|en cours|now)", d, maxsplit=1)
+    sm, sy = _point(parts[0]) if parts else (None, None)
+    em, ey = (_point(parts[1]) if len(parts) > 1 else (None, None))
+    ongoing = bool(_ONGOING.search(d)) or (len(parts) > 1 and ey is None and sy is not None)
+    if len(parts) == 1:
+        em, ey = sm, sy
+    return {"sm": sm, "sy": sy, "em": em, "ey": ey, "ongoing": ongoing}
+
+
+def _when(month: int | None, year: int | None, language: str) -> str:
+    if not year:
+        return ""
+    if month:
+        return f"{EN_MONTHS[month - 1]} {year}" if language == "en" else f"{FR_MONTHS[month - 1]} {year}"
+    return str(year)
+
+
+def _finished(r: dict, today: date) -> bool:
+    if r["ongoing"] or not r["ey"]:
+        return False
+    if r["em"]:
+        return (r["ey"], r["em"]) <= (today.year, today.month)
+    return r["ey"] < today.year or (r["ey"] == today.year and today.month >= 7)
+
+
+_FEM_DIPLOMAS = ("licence", "maîtrise", "maitrise", "classe", "formation", "école", "spécialisation", "certification", "attestation", "agrégation", "habilitation")
+
+
+def _un(title: str) -> str:
+    return "une" if title.lower().startswith(_FEM_DIPLOMAS) else "un"
+
+
+def de_institution(name: str) -> str:
+    """« de l'Université de Lomé (École Polytechnique de Lomé) », « du Lycée X », « de Sciences Po »."""
+    parts = [x.strip() for x in re.split(r"\s+/\s+|\s+\|\s+", name) if x.strip()]
+    first, rest = parts[0], parts[1:]
+    low = first.lower()
+    if low[:1] in "aeiouéèêh" and low.split(" ")[0] in ("université", "universite", "école", "ecole", "institut", "académie", "academie", "hôpital", "agence", "association", "ong", "office", "observatoire", "entreprise", "university", "institute", "academy", "imperial"):
+        out = f"de l'{first}"
+    elif low.startswith(("lycée", "collège", "centre", "groupe", "ministère", "cabinet", "laboratoire", "conseil", "bureau", "complexe", "service")):
+        out = f"du {first}"
+    elif low.startswith(("faculté", "fondation", "banque", "direction", "société", "chambre", "mairie", "clinique")):
+        out = f"de la {first}"
+    else:
+        out = f"de {first}" if low[:1] not in "aeiouéèêh" else f"d'{first}"
+    return out + (f" ({', '.join(rest)})" if rest else "")
+
+
+# Débuts nominaux fréquents dans les CV et verbe correspondant (« Installation et configuration de… » → « installé et configuré des… »)
+NOUN_TO_VERB = {
+    "analyse": "analysé", "installation": "installé", "configuration": "configuré", "déploiement": "déployé", "deploiement": "déployé",
+    "évaluation": "évalué", "evaluation": "évalué", "rédaction": "rédigé", "gestion": "géré", "organisation": "organisé", "création": "créé",
+    "développement": "développé", "conception": "conçu", "animation": "animé", "coordination": "coordonné", "encadrement": "encadré",
+    "réalisation": "réalisé", "préparation": "préparé", "accompagnement": "accompagné", "sensibilisation": "sensibilisé",
+    "administration": "administré", "supervision": "supervisé", "automatisation": "automatisé", "élaboration": "élaboré", "collecte": "collecté",
+    "formation": "formé", "étude": "étudié", "migration": "migré", "modélisation": "modélisé", "conduite": "conduit", "mise en place": "mis en place",
+    "mise en œuvre": "mis en œuvre", "participation": "participé", "identification": "identifié", "surveillance": "surveillé",
+    "maintenance": "assuré la maintenance", "suivi": "assuré le suivi", "support": "assuré le support",
+}
+_VERB_TAKES_OBJECT = {"assuré la maintenance", "assuré le suivi", "assuré le support"}
+
+
+def bullet_to_clause(bullet: str) -> str | None:
+    """Ligne de CV → proposition au passé composé sans sujet (« analysé des vulnérabilités Web avec Nmap »), ou None."""
+    b = bullet.strip().rstrip(".;")
+    if not b:
+        return None
+    weak = apply_weak_start(b)
+    if weak and weak.split(" ")[0].lower().endswith(("é", "i", "u", "t", "s")):
+        return writing.lower_first(weak)
+    low = b.lower()
+    if any(re.match(rf"{re.escape(v)}\b", low) for v in ACTION_VERBS_FR):
+        return writing.lower_first(b)
+    nouns = sorted(NOUN_TO_VERB, key=len, reverse=True)
+    noun_re = "|".join(re.escape(n) for n in nouns)
+    m = re.match(rf"^({noun_re})(?:\s+(technique|informatique|scientifique))?(?:\s+et\s+({noun_re}))?\s+(.*)$", b, re.I)
+    if not m:
+        return None
+    v1 = NOUN_TO_VERB[m.group(1).lower()]
+    v2 = NOUN_TO_VERB[m.group(3).lower()] if m.group(3) else None
+    rest = m.group(4)
+    if v1 in _VERB_TAKES_OBJECT:
+        if v2:
+            return None
+        extra = f" {m.group(2).lower()}" if m.group(2) else ""
+        rest_obj = rest if re.match(r"^(de|du|des|d'|d’)\b", rest) else None
+        return f"{v1}{extra} {rest_obj}" if rest_obj else (f"{v1}{extra}" if not rest else None)
+    if m.group(2):
+        return None
+    if v2 and v2 in _VERB_TAKES_OBJECT:
+        return None
+    obj = _object_after("X", rest)
+    if obj == rest and not re.match(r"^[A-Z0-9]", rest):  # complément sans « de » : tournure non reconnue
+        return None
+    verbs = f"{v1} et {v2}" if v2 else v1
+    return f"{verbs} {obj}"
+
+
+def _role_fr(title: str) -> tuple[str, str]:
+    """(« un stage en cybersécurité », « effectué ») pour un stage, sinon (« technicien systèmes », « travaillé comme »)."""
+    t = title.strip()
+    m = re.match(r"^stagiaire\s+(.*)$", t, re.I)
+    if m:
+        return f"un stage {m.group(1)}", "stage"
+    if re.match(r"^stage\b", t, re.I):
+        return "un " + writing.lower_first(t), "stage"
+    keep = t if re.match(r"^[A-Z]{2,}", t) else writing.lower_first(t)
+    return keep, "poste"
+
+
+def _place_fr(loc: str) -> str:
+    if not loc:
+        return ""
+    if re.search(r"distance|remote|télétravail", loc, re.I):
+        return ", à distance"
+    city = re.split(r",|\|", loc)[0].strip()
+    return f", à {city}" if city else ""
+
+
+def _place_en(loc: str) -> str:
+    if not loc:
+        return ""
+    if re.search(r"distance|remote", loc, re.I):
+        return " (remote)"
+    city = re.split(r",|\|", loc)[0].strip()
+    return f" in {city}" if city else ""
+
+
+def cv_story(p: Profile, s: Scholarship, language: str, today: date) -> dict:
+    """Faits du CV mis en phrases pour la lettre : formation, expériences, compétences. Vide si le CV est dans une autre langue."""
+    if not p.cv_text:
+        return {}
+    # CV dans une autre langue que la lettre : on garde les faits (diplômes, employeurs, dates) et les
+    # intitulés d'origine entre guillemets, sans traduire le détail des missions.
+    cross = writing.detect_language(p.cv_text) not in (None, language)
+    from .cv import build_cv_rules  # import local : cv importe déjà ce module indirectement
+
+    built = build_cv_rules(p.cv_text, p, s, None, today=today)
+    secs = {sec["key"]: sec for sec in built["sections"]}
     en = language == "en"
-    domain = (domain_name(p.domain, language) or ("my field" if en else "mon domaine")).lower()
+    out: dict[str, list[str]] = {"education": [], "experience": [], "skills": []}
+
+    edus = sorted((secs.get("education") or {}).get("entries", []), key=lambda e: (parse_range(e["dates"])["ey"] or 0), reverse=True)
+    for i, e in enumerate(edus[:2]):
+        title = e["title"].strip()
+        if not title:
+            continue
+        r = parse_range(e["dates"])
+        org = e.get("organization", "")
+        if cross:
+            title = f"{diploma_noun(title, language)} ({quote(title, language)})"
+        if en:
+            org_en = re.sub(r" / (.*)$", r" (\1)", org)
+            if re.match(r"^(university|institute|polytechnic|school|college|academy) of\b", org_en, re.I):
+                org_en = "the " + org_en
+            where = f" from {org_en}" if org and i == 0 else ""
+            if i == 0:
+                out["education"].append(f"I hold a {title}{where}" + (f", completed in {r['ey']}." if r["ey"] else ".") if _finished(r, today)
+                                        else f"I am currently studying for a {title}" + (f" at {org}" if org else "") + (f", which I will complete in {r['ey']}." if r["ey"] else "."))
+            else:
+                out["education"].append(f"Before that, I earned a {title}" + (f" in {r['ey']}." if r["ey"] else "."))
+        else:
+            un = "un" if cross and not diploma_noun(e["title"], "fr").startswith("licence") else _un(title)
+            fem = un == "une"
+            if i == 0:
+                if _finished(r, today):
+                    out["education"].append(f"Je suis titulaire d'{un} {title}" + (f" {de_institution(org)}" if org else "") + (f", obtenu{'e' if fem else ''} en {r['ey']}." if r["ey"] else "."))
+                else:
+                    out["education"].append(f"Je prépare actuellement {un} {title}" + (f" {at_institution(org.split(' / ')[0], 'fr')}" if org else "") + (f", que j'achèverai en {r['ey']}." if r["ey"] else "."))
+            else:
+                out["education"].append(f"Auparavant, j'ai obtenu {un} {title}" + (f" en {r['ey']}." if r["ey"] else "."))
+
+    exps = sorted((secs.get("experience") or {}).get("entries", []), key=lambda e: (parse_range(e["dates"])["ey"] or 9999 if parse_range(e["dates"])["ongoing"] else parse_range(e["dates"])["ey"] or 0), reverse=True)
+    for e in exps[:2]:
+        title = e["title"].strip()
+        if not title:
+            continue
+        r = parse_range(e["dates"])
+        org = e.get("organization", "")
+        if cross:
+            start, end = _when(r["sm"], r["sy"], language), _when(r["em"], r["ey"], language)
+            span = _span(r, language, today)
+            at = (f" at {org}" if en else f" chez {org}") if org else ""
+            place = _place_en(e.get("location", "")) if en else _place_fr(e.get("location", ""))
+            done = _finished(r, today)
+            if en:
+                verb = "I held the position of" if done else "I have held the position of"
+                out["experience"].append(writing.complete_sentence(f"{span}{verb} {quote(title, 'en')}{at}{place}"))
+            else:
+                verb = "j'ai occupé le poste de" if done else "j'occupe le poste de"
+                out["experience"].append(writing.complete_sentence(f"{span}{verb} {quote(title, 'fr')}{chez_or(org)}{place}"))
+            continue
+        if en:
+            start, end = _when(r["sm"], r["sy"], "en"), _when(r["em"], r["ey"], "en")
+            role = re.sub(r"^intern\b", "an intern", title, flags=re.I) if re.match(r"^intern\b", title, re.I) else ("an " if title[:1].lower() in "aeiou" else "a ") + title
+            at = f" at {org}" if org else ""
+            if _finished(r, today) and start and end and start != end:
+                sent = f"{_span(r, 'en', today)}I worked as {role}{at}{_place_en(e.get('location', ''))}."
+            elif not _finished(r, today) and start:
+                sent = f"Since {start}, I have been working as {role}{at}{_place_en(e.get('location', ''))}."
+            else:
+                sent = f"I worked as {role}{at}{_place_en(e.get('location', ''))}" + (f" in {r['ey']}." if r["ey"] else ".")
+            bl = next((b for b in e["bullets"] if re.match(r"^(" + "|".join(re.escape(v) for v in ACTION_VERBS_EN) + r")\b", b.lower())), None)
+            if bl:
+                sent += f" There, I {writing.lower_first(bl.rstrip('.;'))}."
+            out["experience"].append(sent)
+            continue
+        role, kind = _role_fr(title)
+        chez = f" chez {org}" if org else ""
+        place = _place_fr(e.get("location", ""))
+        start, end = _when(r["sm"], r["sy"], "fr"), _when(r["em"], r["ey"], "fr")
+        de = (lambda w: f"d'{w}" if w[:1] in "aeiouéèêh" else f"de {w}")
+        if kind == "stage":
+            core = f"j'ai effectué {role}{chez}{place}"
+        else:
+            core = f"j'ai occupé le poste de {role}{chez}{place}" if _finished(r, today) else f"je travaille comme {role}{chez}{place}"
+        if _finished(r, today) and start and end and start != end:
+            sent = f"{_span(r, 'fr', today)}{core}."
+        elif not _finished(r, today) and start:
+            sent = f"Depuis {start}, {core}." if kind != "stage" else f"Depuis {start}, j'effectue {role}{chez}{place}."
+        else:
+            sent = writing.complete_sentence(core + (f" en {r['ey']}" if r["ey"] else ""))
+        clauses = []
+        for b in e["bullets"][:3]:
+            parts = [x.strip() for x in re.split(r"\s*;\s*", b) if x.strip()]
+            conv = [bullet_to_clause(x) for x in parts]
+            if conv and all(conv):
+                clauses = conv
+                break
+        if clauses:
+            body = ", puis ".join(clauses)
+            body = re.sub(r"\b(ainsi que|et) (?:de |d'|d’)([a-zà-ÿ][\w-]*[sx])\b", r"\1 des \2", body)
+            sent += " J'y ai " + body + "."
+        out["experience"].append(sent)
+
+    skills_sec = secs.get("skills")
+    if skills_sec:
+        from .cv import _skill_keywords
+
+        keys = _skill_keywords(secs, 6)
+        if cross:
+            keys = [k for k in keys if re.match(r"^[A-Z0-9]", k) and writing.detect_language(k) is None and not re.search(r"\b(de|des|et|du|la|le|of|and|the)\b", k)][:5]
+        if len(keys) >= 3:
+            out["skills"].append(("I am proficient in " if en else "Je maîtrise notamment ") + _join_actions_raw(keys, language) + ".")
+    return out
+
+
+DIPLOMA_NOUNS = [
+    (r"\b(master|msc|m\.sc|ma\b|mba|mphil|maîtrise)", ("master", "master's degree")),
+    (r"\b(licence|bachelor|bsc|b\.sc|ba\b|beng|undergraduate)", ("licence", "bachelor's degree")),
+    (r"\b(doctorat|phd|ph\.d|doctorate)", ("doctorat", "PhD")),
+    (r"\b(bts|dut|hnd|diploma|diplôme universitaire)", ("diplôme de technicien supérieur", "higher technical diploma")),
+    (r"\b(baccalauréat|bac\b|high school|a-levels|waec|wassce)", ("baccalauréat", "secondary school diploma")),
+    (r"\b(ingénieur|engineer)", ("diplôme d'ingénieur", "engineering degree")),
+]
+
+
+def diploma_noun(title: str, language: str) -> str:
+    low = title.lower()
+    for pat, (fr, en) in DIPLOMA_NOUNS:
+        if re.search(pat, low):
+            return en if language == "en" else fr
+    return "degree" if language == "en" else "diplôme"
+
+
+def quote(text: str, language: str) -> str:
+    return f"“{text}”" if language == "en" else f"« {text} »"
+
+
+def chez_or(org: str) -> str:
+    return f" chez {org}" if org else ""
+
+
+def _span(r: dict, language: str, today: date) -> str:
+    """Début de phrase daté : « De février à mars 2026, », « D'avril 2023 à avril 2026, », « From April 2023 to April 2026, »."""
+    if not r["sy"]:
+        return ""
+    en = language == "en"
+    if not _finished(r, today):
+        return f"Since {_when(r['sm'], r['sy'], 'en')}, " if en else f"Depuis {_when(r['sm'], r['sy'], 'fr')}, "
+    if r["sy"] == r["ey"] and r["sm"] and r["em"] and r["sm"] != r["em"]:
+        a, b = (EN_MONTHS[r["sm"] - 1], f"{EN_MONTHS[r['em'] - 1]} {r['ey']}") if en else (FR_MONTHS[r["sm"] - 1], f"{FR_MONTHS[r['em'] - 1]} {r['ey']}")
+    else:
+        a, b = _when(r["sm"], r["sy"], language), _when(r["em"], r["ey"], language)
+    if a == b:
+        return f"In {a}, " if en else f"En {a}, "
+    if en:
+        return f"From {a} to {b}, "
+    return (f"D'{a} à {b}, " if a[:1] in "aeiouéèêh" else f"De {a} à {b}, ")
+
+
+def _overlap(a: str, b: str) -> float:
+    """Part des mots significatifs de ``a`` présents dans ``b``."""
+    wa = {w for w in re.findall(r"[a-zà-ÿ0-9]{4,}", a.lower())}
+    wb = {w for w in re.findall(r"[a-zà-ÿ0-9]{4,}", b.lower())}
+    return len(wa & wb) / len(wa) if wa else 0.0
+
+
+def par_org(org: str) -> str:
+    """« par le Gouvernement du Royaume-Uni », « par la Fondation Mastercard », « par l'Agence universitaire », « par Campus France »."""
+    o = (org or "").strip()
+    first = o.split(" ")[0].lower() if o else ""
+    if first in ("gouvernement", "ministère", "département", "conseil", "programme", "fonds", "service", "centre", "réseau", "consortium", "bureau", "secrétariat"):
+        return f"par le {o}"
+    if first in ("fondation", "banque", "commission", "confédération", "région", "république", "fédération", "communauté", "coopération", "délégation"):
+        return f"par la {o}"
+    if first in ("agence", "université", "organisation", "ambassade", "office", "union", "académie", "institut", "école", "association"):
+        return f"par l'{o}"
+    return f"par {o}"
+
+
+def _join_actions_raw(items: list[str], language: str) -> str:
+    return items[0] if len(items) == 1 else ", ".join(items[:-1]) + (" and " if language == "en" else " et ") + items[-1]
+
+
+def _usable(text: str | None, language: str) -> bool:
+    """Une réponse est reprise telle quelle seulement si elle est dans la langue de la lettre (sans IA, pas de traduction)."""
+    return bool(text and text.strip()) and writing.detect_language(text) in (None, language)
+
+
+_FR_ORG = re.compile(r"\b(gouvernement|minist[èe]re|ambassade|universit[ée]|fondation|agence|coop[ée]ration|bourses?|conseil|r[ée]publique|de la|du|des|et)\b", re.I)
+
+
+
+
+# ------------------------------------------------------------------ modèle hors-ligne
+def letter_template(p: Profile, s: Scholarship, answers: dict, language: str, max_words: int, notes: list[str] | None = None, today: date | None = None) -> list[str]:
+    today = today or date.today()
+    en = language == "en"
+    notes = notes if notes is not None else []
+    domain = (domain_name(p.domain, language) or "").lower() if p.domain and p.domain != "tous" else ""
     target = LEVEL_PHRASE["en" if en else "fr"].get(p.target_level or "", "")
     current = CURRENT_PHRASE["en" if en else "fr"].get(p.current_level or "", "")
     countries = [c for c in (s.study_countries or [])]
     country = country_name(countries[0], language) if len(countries) == 1 else ""
     where_fr = writing.country_in(countries[0], country) if country else ""
-    program = (answers.get("target_program") or "").strip().rstrip(".")
+    where_en = writing.country_in_en(countries[0], country) if country else ""
+    skipped: list[str] = []
+
+    def ans(key: str) -> str:
+        v = (answers.get(key) or "").strip()
+        if v and not _usable(v, language):
+            skipped.append(key)
+            return ""
+        return v
+
+    program = ans("target_program").rstrip(".")
     fem = p.gender == "f"
+    story = cv_story(p, s, language, today)
+    if p.cv_text and writing.detect_language(p.cv_text) not in (None, language):
+        notes.append(t(f"Votre CV n'est pas en {'anglais' if en else 'français'} : la lettre reprend vos diplômes, postes et dates avec leurs intitulés d'origine, sans le détail de vos missions. Importez votre CV dans la langue de la lettre pour une version plus complète.",
+                       f"Your CV is not in {'English' if en else 'French'}: the letter uses your degrees, positions and dates with their original titles, without the detail of your tasks. Import your CV in the language of the letter for a fuller version."))
     paragraphs: list[str] = []
 
     # 1. Objet de la lettre
     if en:
-        p1 = f"I am applying for {bourse_name_en(s)}, offered by {s.organization}"
+        org = s.organization if s.organization and not _FR_ORG.search(s.organization) else ""
+        p1 = f"I am applying for {bourse_name_en(s)}" + (f", offered by {org}," if org else "")
         if target:
-            p1 += f", to pursue {target} in {domain}"
-        if country:
-            p1 += f" in {country}"
+            p1 += f" to pursue {target}" + (f" in {domain}" if domain else "")
+        if where_en:
+            p1 += f" {where_en}"
         p1 += "."
         if program:
             p1 += f" The programme I am aiming for is {program}."
     else:
-        p1 = f"Je vous adresse ma candidature {a_bourse_fr(s)}, {offered_fr(s)} par {s.organization}"
+        p1 = f"Je vous adresse ma candidature {a_bourse_fr(s)}, {offered_fr(s)} {par_org(s.organization)}"
         if target:
-            p1 += f", pour préparer {target} en {domain}"
+            p1 += f", pour préparer {target}" + (f" en {domain}" if domain else "")
         if where_fr:
             p1 += f" {where_fr}"
         p1 += "."
         if program:
-            p1 += f" Je vise plus précisément le programme {program}."
+            p1 += f" Je vise plus précisément le programme « {program} »."
     paragraphs.append(p1)
 
-    # 2. Parcours
-    parts = []
-    if p.institution or current:
+    # 2. Formation
+    parts = list(story.get("education", []))
+    if not parts and (p.institution or current):
         if en:
-            parts.append(f"I am currently completing {current or 'my studies'} in {domain}" + (f" {at_institution(p.institution, 'en')}" if p.institution else "") + ".")
+            parts.append(f"I am currently completing {current or 'my studies'}" + (f" in {domain}" if domain else "") + (f" {at_institution(p.institution, 'en')}" if p.institution else "") + ".")
         else:
-            parts.append(f"Je termine actuellement {current or 'mes études'} en {domain}" + (f" {at_institution(p.institution, 'fr')}" if p.institution else "") + ".")
+            parts.append(f"Je poursuis actuellement {current or 'mes études'}" + (f" en {domain}" if domain else "") + (f" {at_institution(p.institution, 'fr')}" if p.institution else "") + ".")
     if p.grade_average is not None:
         parts.append(f"My average grade is {_num(p.grade_average, 'en')} out of 20." if en else f"Ma moyenne générale est de {_num(p.grade_average, 'fr')} sur 20.")
-    highlights = cv_highlights(p.cv_text, language)
-    if highlights:
-        parts.append(("Alongside my studies, I " if en else "En parallèle de ma formation, j'ai ") + _join_actions(highlights, language) + ".")
     if parts:
         paragraphs.append(" ".join(parts))
 
-    # 3. Réalisation marquante
-    proud = writing.as_sentences(answers.get("proud_of") or "")
+    # 3. Expérience, tirée du CV (sans répéter la réalisation que l'étudiant raconte plus loin)
+    proud_raw = ans("proud_of")
+    exp_sents = []
+    for sent in story.get("experience", []):
+        head, sep, detail = sent.partition(" There, I " if en else " J'y ai ")
+        if sep and proud_raw and _overlap(detail, proud_raw) >= 0.5:
+            sent = head
+        exp_sents.append(sent)
+    parts = exp_sents + list(story.get("skills", []))
+    if not story:
+        highlights = cv_highlights(p.cv_text, language) if not p.cv_text or writing.detect_language(p.cv_text) in (None, language) else []
+        if highlights:
+            parts.append(("Alongside my studies, I " if en else "En parallèle de ma formation, j'ai ") + _join_actions(highlights, language) + ".")
+    if parts:
+        paragraphs.append(" ".join(parts))
+
+    # 4. Réalisation marquante
+    proud = writing.first_person(proud_raw, "J'ai", "I", language)
     if proud:
         lead = "One experience shaped this application more than any other." if en else "Une expérience a particulièrement orienté ce projet."
         paragraphs.append(f"{lead} {proud}")
 
-    # 4. Pourquoi ce pays, ce programme, plan d'études
+    # 5. Pourquoi ce pays, ce programme, plan d'études
     parts = []
-    if answers.get("why_country"):
+    why_country = ans("why_country")
+    if why_country:
         if en:
-            parts.append(_integrate(answers["why_country"], f"Studying in {country} is a deliberate choice." if country else "", (f"I have chosen to study in {country}" if country else "I have chosen this destination"), "en"))
+            parts.append(_integrate(why_country, f"Studying {where_en} is a deliberate choice." if where_en else "", (f"I have chosen to study {where_en}" if where_en else "I have chosen this destination"), "en"))
         else:
-            parts.append(_integrate(answers["why_country"], f"Étudier {where_fr} est un choix réfléchi." if where_fr else "", (f"J'ai choisi d'étudier {where_fr}" if where_fr else "J'ai choisi cette destination"), "fr"))
-    if answers.get("why_program"):
-        if en:
-            parts.append(_integrate(answers["why_program"], "", "I am applying to this programme", "en"))
+            parts.append(_integrate(why_country, f"Étudier {where_fr} est un choix réfléchi." if where_fr else "", (f"J'ai choisi d'étudier {where_fr}" if where_fr else "J'ai choisi cette destination"), "fr"))
+    why_program = ans("why_program")
+    if why_program:
+        if writing.is_infinitive_start(why_program, language):
+            parts.append(writing.first_person(why_program, "Ce programme me permettra de", "This programme will allow me to", language))
         else:
-            parts.append(_integrate(answers["why_program"], "", "Je me tourne vers ce programme", "fr"))
-    if answers.get("study_plan"):
-        parts.append(writing.as_sentences(answers["study_plan"]))
+            parts.append(_integrate(why_program, "", "I am applying to this programme" if en else "Je me tourne vers ce programme", language))
+    plan = ans("study_plan")
+    if plan:
+        parts.append(writing.first_person(plan, "Pendant ma formation, je souhaite", "During the programme, I plan to", language))
+    project_after = ans("project_after")
+    profile_project = p.project if _usable(p.project, language) else ""
+    if p.project and not profile_project:
+        skipped.append("project")
+    if project_after and profile_project and profile_project.strip().lower()[:30] != project_after.lower()[:30]:
+        parts.append(writing.first_person(profile_project, "Je souhaite", "I want to", language))
     if parts:
         paragraphs.append(" ".join(x for x in parts if x))
 
-    # 5. Projet après les études
-    after = answers.get("project_after") or p.project or ""
+    # 6. Projet après les études
+    after = project_after or profile_project or ""
     if after.strip():
         a = after.strip()
         if en:
-            if re.match(r"^i\b", a):
+            if re.match(r"^i\b", a, re.I):
                 paragraphs.append(writing.complete_sentence("After graduating, " + a))
+            elif writing.is_infinitive_start(a, "en"):
+                paragraphs.append(writing.first_person(a, "", "After graduating, I plan to", "en"))
             else:
                 paragraphs.append("After graduating, my goal is precise. " + writing.as_sentences(a))
         else:
             if re.match(r"^(je|j')\b", a, re.I):
                 paragraphs.append(writing.complete_sentence("À l'issue de cette formation, " + writing.lower_first(a)))
+            elif writing.is_infinitive_start(a, "fr"):
+                paragraphs.append(writing.first_person(a, "À l'issue de cette formation, je compte", "", "fr"))
             else:
                 paragraphs.append("À l'issue de cette formation, mon objectif est précis. " + writing.as_sentences(a))
         themes = detect_themes(s)
         if "retour" in themes or "communaute" in themes:
             paragraphs[-1] += " This project is directly in line with the purpose of this scholarship." if en else " Ce projet rejoint directement la vocation de cette bourse."
 
-    extra = writing.as_sentences(answers.get("extra") or "")
+    extra = writing.as_sentences(ans("extra"))
     if extra:
         paragraphs.append(extra)
 
-    # 6. Conclusion
+    # 7. Conclusion
     if en:
         paragraphs.append("I would welcome the opportunity to discuss my application at an interview. Thank you for your time and consideration.")
     else:
@@ -308,6 +667,14 @@ def letter_template(p: Profile, s: Scholarship, answers: dict, language: str, ma
             paragraphs.append(f"Je suis {ready} à vous présenter mon projet lors d'un entretien et vous remercie de l'attention que vous porterez à ma candidature.")
         else:
             paragraphs.append("Je me tiens à votre disposition pour vous présenter mon projet lors d'un entretien et vous remercie de l'attention que vous porterez à ma candidature.")
+
+    if skipped:
+        lang_fr = "anglais" if en else "français"
+        lang_en = "English" if en else "French"
+        what_fr = " et ".join(x for x in [("certaines de vos réponses" if any(k != "project" for k in skipped) else ""), ("le projet de votre profil" if "project" in skipped else "")] if x)
+        what_en = " and ".join(x for x in [("some of your answers" if any(k != "project" for k in skipped) else ""), ("the project in your profile" if "project" in skipped else "")] if x)
+        notes.append(t(f"La lettre est en {lang_fr}, mais {what_fr} sont rédigés dans une autre langue : ces passages n'ont pas été repris. Écrivez-les en {lang_fr} pour une lettre plus complète.",
+                       f"The letter is in {lang_en}, but {what_en} are written in another language, so those parts were left out. Write them in {lang_en} for a fuller letter."))
 
     paragraphs = [writing.fix_paragraph(x, language) for x in paragraphs if x and x.strip()]
     return _fit_words(paragraphs, max_words)
@@ -384,10 +751,13 @@ def _ai_user_prompt(p: Profile, s: Scholarship, answers: dict, language: str, ma
     themes = ", ".join(THEMES[k]["label"] for k in detect_themes(s)) or "non précisés"
     ans = "\n".join(f"{label} : {answers.get(key) or '-'}" for key, label in QUESTIONS)
     return f"""Langue : {'anglais' if language == 'en' else 'français'} ({'américain' if letter_style(s, language) == 'en_us' else 'britannique' if language == 'en' else 'France'}).
-Limite du corps de la lettre : {max_words} mots environ. Ton : {tone}. Genre grammatical du candidat : {gender}.
+Limite du corps de la lettre : {max_words} mots environ ; visez entre {int(max_words * 0.8)} et {max_words} mots si les faits fournis le permettent, sans remplissage. Ton : {tone}. Genre grammatical du candidat : {gender}.
+Date du jour : {date.today().isoformat()}. Déduisez des dates du CV si chaque diplôme est obtenu ou en cours et si chaque poste est terminé ou actuel, et conjuguez en conséquence.
+Le CV et les réponses peuvent être rédigés dans une autre langue que la lettre : traduisez fidèlement les faits dans la langue de la lettre. Les intitulés officiels de diplômes peuvent garder leur nom d'origine.
 
 BOURSE
-Nom : {s.title}
+Nom officiel : {s.title}
+Nom à employer dans la lettre : {short_title(s, language)}
 Organisme : {s.organization}
 Pays d'études : {countries}
 Description : {s.summary}
@@ -396,7 +766,7 @@ Ce que le jury valorise : {themes}
 
 PROFIL
 Nom : {p.full_name}
-Diplôme en cours ou obtenu : {p.current_level or '-'} ; diplôme visé : {p.target_level or '-'}
+Niveau actuel : {LEVEL_PHRASE['fr'].get(p.current_level or '', '-')} ; diplôme visé : {LEVEL_PHRASE['fr'].get(p.target_level or '', '-')}
 Domaine : {DOMAINS.get(p.domain or '', '-')}
 Établissement : {p.institution or '-'} ; moyenne : {p.grade_average if p.grade_average is not None else '-'} sur 20
 Expériences : {p.experiences or '-'}
@@ -477,14 +847,15 @@ def readiness(p: Profile, email: str | None) -> list[dict]:
 def generate_letter(p: Profile, s: Scholarship, answers: dict, language: str, max_words: int, tone: str, use_ai: bool, email: str | None = None) -> dict:
     header = build_header(p, s, email, language, answers)
     paragraphs = None
+    notes: list[str] = []
     if use_ai:
         paragraphs = _ai_paragraphs(_ai_user_prompt(p, s, answers, language, max_words, tone), language, max_words)
     ai_used = paragraphs is not None
     if paragraphs is None:
-        paragraphs = letter_template(p, s, answers, language, max_words)
+        paragraphs = letter_template(p, s, answers, language, max_words, notes)
     paragraphs = [writing.fix_paragraph(x, language) for x in paragraphs]
     paragraphs = _fit_words([x for x in paragraphs if x], max_words)
-    letter = {**header, "paragraphs": paragraphs, "scholarship_id": s.id, "scholarship_title": s.title, "ai_used": ai_used}
+    letter = {**header, "paragraphs": paragraphs, "scholarship_id": s.id, "scholarship_title": s.title, "ai_used": ai_used, "notes": notes}
     return letter
 
 

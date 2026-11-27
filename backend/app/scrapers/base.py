@@ -19,8 +19,6 @@ from urllib.robotparser import RobotFileParser
 
 import httpx
 
-from ..netguard import safe_client
-
 from ..config import get_settings
 
 log = logging.getLogger(__name__)
@@ -39,7 +37,7 @@ class PoliteFetcher:
         self.cache_seconds = cache_hours * 3600
         self._last: dict[str, float] = {}
         self._robots: dict[str, RobotFileParser | None] = {}
-        self.client = safe_client(headers={"User-Agent": self.user_agent}, timeout=20, follow_redirects=True)
+        self.client = httpx.Client(headers={"User-Agent": self.user_agent}, timeout=20, follow_redirects=True)
 
     # -- robots.txt
     def robots_for(self, url: str) -> RobotFileParser | None:

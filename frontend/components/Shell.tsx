@@ -2,8 +2,9 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { api, signOut } from "@/lib/api";
-import { Me, useAuth } from "@/lib/useAuth";
+import { setToken } from "@/lib/api";
+import { Me, homeFor, useAuth } from "@/lib/useAuth";
+import VerifyEmailBanner from "./VerifyEmailBanner";
 import AuthModal from "./AuthModal";
 import Footer from "./Footer";
 import Icon, { Logo } from "./Icon";
@@ -33,33 +34,11 @@ const TITLES: [string, string][] = [
   ["/admin", "Administration"],
 ];
 
-const PUBLIC_PATHS = ["/", "/connexion", "/questionnaire", "/soutenir", "/verifier-email", "/mot-de-passe-oublie", "/reinitialiser-mot-de-passe", "/confidentialite"];
+const PUBLIC_PATHS = ["/", "/connexion", "/questionnaire", "/soutenir", "/mot-de-passe-oublie", "/reinitialiser", "/verifier-email", "/a-propos", "/conditions", "/confidentialite"];
+const PUBLIC_PREFIXES = ["/destinations"];
 
-/** Bandeau tant que l'adresse e-mail n'est pas confirmée (paiements et accompagnement en dépendent). */
-function VerifyBanner() {
-  const { t } = useT();
-  const [state, setState] = useState<"idle" | "sent" | "error">("idle");
-  const [error, setError] = useState("");
-  async function resend() {
-    try {
-      await api("/api/auth/renvoyer-verification", { method: "POST" });
-      setState("sent");
-    } catch (e) {
-      setError((e as Error).message);
-      setState("error");
-    }
-  }
-  return (
-    <div role="status" className="border-b border-gold/40 bg-gold/10 px-4 py-2.5 text-sm text-ink sm:px-8">
-      {t("Confirmez votre adresse e-mail grâce au lien que nous vous avons envoyé : il est nécessaire pour payer un dossier ou demander un accompagnement.")}{" "}
-      {state === "sent" ? <span className="font-semibold text-ok">{t("Nouveau lien envoyé.")}</span>
-        : <button type="button" onClick={resend} className="font-semibold text-brand underline">{t("Renvoyer le lien")}</button>}
-      {state === "error" && <span className="ml-2 text-danger">{error}</span>}
-    </div>
-  );
-}
-
-function PublicShell({ children, loggedIn }: { children: React.ReactNode; loggedIn: boolean }) {
+function PublicShell({ children, me }: { children: React.ReactNode; me: Me | null }) {
+  const loggedIn = !!me;
   const [open, setOpen] = useState(false);
   const path = usePathname();
   const { t } = useT();
@@ -84,8 +63,11 @@ function PublicShell({ children, loggedIn }: { children: React.ReactNode; logged
                 className={`whitespace-nowrap rounded-full px-3 py-2 text-sm ${path === l.href ? "text-ink" : "text-muted hover:text-ink"}`}>{l.label}</Link>
             ))}
             <LangToggle className="hidden xl:flex xl:ml-2" /><ThemeToggle className="hidden xl:grid" />
-            {loggedIn ? (
-              <Link href="/mes-bourses" className="btn-primary xl:ml-3" onClick={() => setOpen(false)}>{t("Mon espace")}</Link>
+            {me ? (
+              <>
+                <span className="whitespace-nowrap px-3 py-2 text-sm text-muted xl:ml-2">{t("Salut, {name}", { name: me.display_name })}</span>
+                <Link href={homeFor(me)} className="btn-primary whitespace-nowrap xl:ml-1" onClick={() => setOpen(false)}>{t("Mon espace")}</Link>
+              </>
             ) : (
               <>
                 <Link href="/connexion" onClick={() => setOpen(false)} className="whitespace-nowrap rounded-full px-3 py-2 text-sm text-muted hover:text-ink">{t("Connexion")}</Link>
@@ -139,7 +121,7 @@ function AppShell({ children, me }: { children: React.ReactNode; me: Me | null }
               <span className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-brand">{t("Demander")} <Icon name="arrow" className="h-3.5 w-3.5" /></span>
             </Link>
           )}
-          <button onClick={async () => { await signOut(); router.push("/"); }}
+          <button onClick={() => { setToken(null); router.push("/"); }}
             className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm text-muted hover:bg-paper hover:text-ink">
             <Icon name="logout" className="h-[18px] w-[18px]" /> {t("Déconnexion")}
           </button>
@@ -156,14 +138,14 @@ function AppShell({ children, me }: { children: React.ReactNode; me: Me | null }
           <LangToggle />
           <ThemeToggle />
           {me && (
-            <div className="flex items-center gap-2 text-sm text-muted">
-              <span className="hidden max-w-[220px] truncate md:inline">{me.email}</span>
-              <span className="grid h-8 w-8 place-items-center rounded-full bg-mint text-xs font-bold uppercase text-[#04140e]">{me.email[0]}</span>
-            </div>
+            <Link href="/profil" className="flex items-center gap-2 text-sm text-muted hover:text-ink" title={me.email}>
+              <span className="hidden max-w-[240px] truncate sm:inline">{t("Salut,")} <span className="font-semibold text-ink">{me.display_name}</span></span>
+              <span className="grid h-8 w-8 place-items-center rounded-full bg-mint text-xs font-bold uppercase text-[#04140e]">{(me.display_name || me.email)[0]}</span>
+            </Link>
           )}
           </div>
         </header>
-        {me && !me.email_verified && <VerifyBanner />}
+        {me && !me.email_verified && <VerifyEmailBanner email={me.email} />}
         <main className="mx-auto max-w-6xl px-4 pb-20 pt-6 sm:px-8">{children}</main>
         <Footer loggedIn />
       </div>
@@ -174,10 +156,10 @@ function AppShell({ children, me }: { children: React.ReactNode; me: Me | null }
 export default function Shell({ children }: { children: React.ReactNode }) {
   const { me, ready } = useAuth();
   const path = usePathname();
-  const isPublic = PUBLIC_PATHS.includes(path) || (ready && !me);
+  const isPublic = PUBLIC_PATHS.includes(path) || PUBLIC_PREFIXES.some((p) => path.startsWith(p)) || (ready && !me);
   return (
     <>
-      {isPublic ? <PublicShell loggedIn={!!me}>{children}</PublicShell> : <AppShell me={me}>{children}</AppShell>}
+      {isPublic ? <PublicShell me={me}>{children}</PublicShell> : <AppShell me={me}>{children}</AppShell>}
       {!me && <AuthModal />}
     </>
   );

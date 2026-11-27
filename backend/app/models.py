@@ -2,7 +2,7 @@
 ce qui fonctionne aussi bien avec SQLite qu'avec PostgreSQL."""
 from datetime import date, datetime, timezone
 
-from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -104,15 +104,12 @@ class User(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(300))
+    # Prénom ou nom d'utilisateur demandé à l'inscription (« Salut, Awa »). Vide pour les anciens comptes.
+    name: Mapped[str] = mapped_column(String(80), default="")
+    email_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     lang: Mapped[str] = mapped_column(String(2), default="fr")  # langue choisie sur le site (alertes, e-mails)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-    # Sécurité du compte
-    email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    # Augmenté à chaque changement de mot de passe : les sessions et liens émis avant deviennent invalides.
-    token_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
-    # Date d'acceptation des conditions et de la politique de confidentialité (inscription)
-    terms_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     profile: Mapped["Profile"] = relationship(back_populates="user", uselist=False, cascade="all, delete-orphan")
     applications: Mapped[list["Application"]] = relationship(back_populates="user", cascade="all, delete-orphan")
@@ -124,12 +121,18 @@ class User(Base):
     credit_orders: Mapped[list["CreditOrder"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
     @property
-    def email_verified(self) -> bool:
-        return self.email_verified_at is not None
-
-    @property
     def is_advisor(self) -> bool:
         return self.advisor is not None and self.advisor.active
+
+    @property
+    def display_name(self) -> str:
+        """Nom affiché dans « Salut, … » : nom d'utilisateur, sinon prénom du profil, sinon début de l'e-mail."""
+        if self.name and self.name.strip():
+            return self.name.strip()
+        full = (self.profile.full_name or "").strip() if self.profile else ""
+        if full:
+            return full.split()[0]
+        return self.email.split("@")[0]
 
 
 class Profile(Base):
@@ -170,16 +173,6 @@ class Profile(Base):
 
     # Facultatif (sensible) : débloque des bourses ciblées
     situations: Mapped[list] = mapped_column(JSON, default=list)  # refugie, handicap, revenus_modestes, premiere_generation, femmes
-    # Consentement explicite à l'utilisation de ces données sensibles (obligatoire pour les enregistrer)
-    sensitive_consent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-
-    def sync_sensitive_consent(self) -> None:
-        """Cocher une de ces situations, sous le texte qui explique leur usage, vaut consentement :
-        on en garde la date. Tout décocher retire le consentement."""
-        if self.situations and self.sensitive_consent_at is None:
-            self.sensitive_consent_at = utcnow()
-        elif not self.situations:
-            self.sensitive_consent_at = None
 
     cv_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     # En-tête des CV et lettres
@@ -421,3 +414,71 @@ class CreditOrder(Base):
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     user: Mapped[User] = relationship(back_populates="credit_orders")
+
+
+class Payment(Base):
+    """Paiement en ligne (CinetPay, ou simulation pour les essais).
+
+    purpose = abonnement : un mois d'abonnement CV et lettres. Une fois payé, un CreditOrder « payé »
+    est créé, ce qui ouvre ou prolonge l'abonnement comme une validation manuelle.
+    purpose = accompagnement : règle l'offre Standard ou Premium d'un accompagnement (coaching_id)."""
+
+    __tablename__ = "payments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    transaction_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    purpose: Mapped[str] = mapped_column(String(20))  # abonnement | accompagnement
+    coaching_id: Mapped[int | None] = mapped_column(ForeignKey("coachings.id", ondelete="SET NULL"), nullable=True)
+    amount: Mapped[int] = mapped_column(Integer)
+    currency: Mapped[str] = mapped_column(String(5), default="XOF")
+    description: Mapped[str] = mapped_column(String(200), default="")
+    provider: Mapped[str] = mapped_column(String(20))  # cinetpay | simulation
+    # en_attente | paye | echoue | annule
+    status: Mapped[str] = mapped_column(String(20), default="en_attente", index=True)
+    checkout_url: Mapped[str | None] = mapped_column(String(800), nullable=True)
+    method: Mapped[str | None] = mapped_column(String(50), nullable=True)  # moyen utilisé (FLOOZ, TMONEY, VISA…)
+    provider_ref: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    provider_message: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    credit_order_id: Mapped[int | None] = mapped_column(ForeignKey("credit_orders.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    user: Mapped[User] = relationship()
+
+
+class EmailLog(Base):
+    """Trace de chaque e-mail envoyé (ou affiché en console), pour l'administration et pour éviter les doublons."""
+
+    __tablename__ = "email_log"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    to: Mapped[str] = mapped_column(String(320), index=True)
+    subject: Mapped[str] = mapped_column(String(300))
+    kind: Mapped[str] = mapped_column(String(40), default="autre")  # rappel | bienvenue | paiement | message | verification…
+    key: Mapped[str | None] = mapped_column(String(150), nullable=True, unique=True)  # envoi unique (ex. rappel-12-J7-user3)
+    backend: Mapped[str] = mapped_column(String(20))
+    status: Mapped[str] = mapped_column(String(20), default="envoye")  # envoye | echec
+    error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class CoachingFile(Base):
+    """Document échangé dans un accompagnement : livré par l'expert (CV revu, lettre, preuve de dépôt)
+    ou envoyé par le candidat (relevés, diplômes…). Gardé en base pour simplifier les sauvegardes."""
+
+    __tablename__ = "coaching_files"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    coaching_id: Mapped[int] = mapped_column(ForeignKey("coachings.id", ondelete="CASCADE"), index=True)
+    author_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    author_role: Mapped[str] = mapped_column(String(20))  # candidat | conseiller | admin
+    # livrable | piece | preuve_depot
+    category: Mapped[str] = mapped_column(String(20), default="piece")
+    filename: Mapped[str] = mapped_column(String(200))
+    content_type: Mapped[str] = mapped_column(String(100))
+    size: Mapped[int] = mapped_column(Integer)
+    data: Mapped[bytes] = mapped_column(LargeBinary)
+    note: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

@@ -19,7 +19,7 @@ from ..vocab import COUNTRIES, DOMAINS
 from . import writing
 from .client import ask_json
 from .documents import SECTION_KEYS, split_sections
-from .formats import CVFormat, choose_format, country_name, document_language, domain_name, section_title
+from .formats import CVFormat, a_bourse_fr, bourse_name_en, choose_format, country_name, document_language, domain_name, nationality_adjective, section_title, short_title
 
 ACTION_VERBS_FR = [
     "organisé", "dirigé", "piloté", "créé", "conçu", "développé", "mené", "coordonné", "animé", "géré",
@@ -78,6 +78,10 @@ def _object_after(verb: str, rest: str) -> str:
         return r
     if verb in ("Formé",):
         return r
+    # « de rapports techniques » → « des rapports techniques », « d'outils » → « des outils » (nom commun au pluriel)
+    m = re.match(r"^(de |d'|d’)([a-zà-ÿ][\w-]*)", r)
+    if m and m.group(2).endswith(("s", "x")) and len(m.group(2)) > 3:
+        return "des " + r[len(m.group(1)):]
     for pat, rep in ((r"^de la ", "la "), (r"^de l'", "l'"), (r"^du ", "le "), (r"^des ", "les "), (r"^d'", ""), (r"^de ", ""), (r"^à la ", "la "), (r"^au ", "le "), (r"^aux ", "les ")):
         if re.match(pat, r, re.I):
             return re.sub(pat, rep, r, count=1, flags=re.I)
@@ -123,7 +127,7 @@ DATE_RANGE = re.compile(
 )
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
 PHONE = re.compile(r"(\+?\d[\d .()-]{7,}\d)")
-LINK = re.compile(r"((?:https?://)?(?:www\.)?(?:linkedin\.com|github\.com|gitlab\.com|behance\.net|[\w-]+\.(?:dev|io|me))/?[\w/.-]*)", re.I)
+LINK = re.compile(r"(?<![\w.@-])((?:https?://)?(?:www\.)?(?:linkedin\.com|github\.com|gitlab\.com|behance\.net|[\w-]+\.(?:dev|io|me))(?![\w@])/?[\w/.-]*)", re.I)
 QUANTIFIED = re.compile(r"\d+\s*(%|personnes|élèves|étudiants|participants|€|euros|f ?cfa|xof|k\b|clients|membres|heures|projets|users|people|students|members|hours|bénéficiaires|villages|écoles)|\b\d{2,}\b", re.I)
 
 # Thèmes de sélection : ce qu'un jury cherche, et comment le repérer dans un CV.
@@ -760,9 +764,9 @@ def objective_line(s: Scholarship | None, p: Profile | None, language: str, toda
     year = _intake_year(s, today)
     dest = _destination(s, p, language)
     if language == "en":
-        parts = [f"Application: {s.title}", f"Intake {year}"] + ([f"Mobility: {', '.join(dest)}"] if dest else [])
+        parts = [f"Application: {short_title(s, 'en')}", f"Intake {year}"] + ([f"Mobility: {', '.join(dest)}"] if dest else [])
     else:
-        parts = [f"Candidature : {s.title}", f"Rentrée {year}"] + ([f"Mobilité : {', '.join(dest)}"] if dest else [])
+        parts = [f"Candidature : {short_title(s)}", f"Rentrée {year}"] + ([f"Mobilité : {', '.join(dest)}"] if dest else [])
     return " | ".join(parts)
 
 
@@ -789,6 +793,12 @@ def headline_for(p: Profile | None, cv_text: str, sections: dict[str, dict], lan
         return x[:1].upper() + x[1:].lower() if x.isupper() and len(x) > 4 else x
     parts = [first] + [tidy(x) for x in specs[:3]]
     return " | ".join(x for x in parts if x)
+
+
+def _number(n: int, language: str) -> str:
+    words = {"fr": ["zéro", "une", "deux", "trois", "quatre", "cinq", "six", "sept", "huit", "neuf"],
+             "en": ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"]}
+    return words["en" if language == "en" else "fr"][n] if 0 <= n < 10 else str(n)
 
 
 def _latest(sections: dict[str, dict], key: str) -> dict | None:
@@ -818,13 +828,18 @@ def personal_summary(raw: dict[str, str], sections: dict[str, dict], p: Profile 
     else:
         if language == "en":
             if edu and edu.get("title"):
-                where = f" from {edu['organization']}" if edu.get("organization") else ""
+                org = re.sub(r" / (.*)$", r" (\1)", edu.get("organization") or "")
+                if re.match(r"^(university|institute|polytechnic|school|college|academy) of\b", org, re.I):
+                    org = "the " + org
+                where = f" from {org}" if org else ""
                 sents.append(f"{edu['title']}{where}.")
             if exps:
                 first = exps[0]
                 at = f" at {first['organization']}" if first.get("organization") else ""
-                more = f" and {len(exps) - 1} other professional experience{'s' if len(exps) > 2 else ''}" if len(exps) > 1 else ""
-                sents.append(f"Hands-on experience as {writing.lower_first(first['title'])}{at}{more}.")
+                more = f" and {_number(len(exps) - 1, 'en')} other professional experience{'s' if len(exps) > 2 else ''}" if len(exps) > 1 else ""
+                role = first["title"].strip()
+                art = "" if re.match(r"^(an?|the)\s", role, re.I) else ("an " if role[:1].lower() in "aeiou" else "a ")
+                sents.append(f"Hands-on experience as {art}{role}{at}{more}.")
             if skills:
                 sents.append(f"Key skills include {_join_fr(skills, 'en')}.")
         else:
@@ -838,7 +853,7 @@ def personal_summary(raw: dict[str, str], sections: dict[str, dict], p: Profile 
             if exps:
                 first = exps[0]
                 chez = f" chez {first['organization']}" if first.get("organization") else ""
-                more = f", ainsi que {len(exps) - 1} autre{'s' if len(exps) > 2 else ''} expérience{'s' if len(exps) > 2 else ''}" if len(exps) > 1 else ""
+                more = f", ainsi que {_number(len(exps) - 1, 'fr')} autre{'s' if len(exps) > 2 else ''} expérience{'s' if len(exps) > 2 else ''}" if len(exps) > 1 else ""
                 sents.append(f"Expérience pratique comme {writing.lower_first(first['title'])}{chez}{more}.")
             if skills:
                 sents.append(f"Compétences clés en {_join_fr(skills)}.")
@@ -849,15 +864,14 @@ def personal_summary(raw: dict[str, str], sections: dict[str, dict], p: Profile 
     # 4. L'objectif, lié à la bourse
     dest_codes = list(s.study_countries or [])[:1] if s else []
     if language == "en":
-        cname = country_name(dest_codes[0], "en") if dest_codes else ""
-        where = (" in the " if cname.startswith(("United", "Netherlands", "Philippines", "Czech", "Dominican", "Gambia")) else " in ") + cname if cname else ""
+        where = " " + writing.country_in_en(dest_codes[0], country_name(dest_codes[0], "en")) if dest_codes else ""
         if s:
-            sents.append(f"Applying to the {s.title} to pursue a {level or 'degree'}{(' in ' + domain) if domain else ''}{where}.")
+            sents.append(f"Applying to {bourse_name_en(s)} to pursue a {(level[:1].lower() + level[1:]) if level else 'degree'}{(' in ' + domain) if domain else ''}{where}.")
     else:
         where = f" {writing.country_in(dest_codes[0], country_name(dest_codes[0], 'fr'))}" if dest_codes else ""
         if s:
             what = f"un {level.lower()}" if level and level.lower() != "licence" else ("une licence" if level else "mes études")
-            sents.append(f"Je candidate à {_article(s.title)} pour préparer {what}{(' en ' + domain) if domain else ''}{where}.")
+            sents.append(f"Je présente ma candidature {a_bourse_fr(s)} pour préparer {what}{(' en ' + domain) if domain else ''}{where}.")
     if p and p.project:
         proj = [x for x in writing.split_sentences(writing.clean_punctuation(p.project, language)) if not is_job_mention(x)]
         after = next((x for x in proj if re.search(r"\b(apr[eè]s|ensuite|retour|rentrer|after|return|back home)\b", x, re.I)), None)
@@ -897,7 +911,7 @@ def header_from(p: Profile | None, cv_text: str, email: str | None, fmt: CVForma
         b = p.birth_date
         out["birth_date"] = f"{b.day} {EN_MONTHS[b.month - 1]} {b.year}" if language == "en" else b.strftime("%d/%m/%Y")
     if fmt.show_nationality and p and p.nationalities:
-        out["nationality"] = ", ".join(country_name(c, language) for c in p.nationalities)
+        out["nationality"] = ", ".join(nationality_adjective(c, language) for c in p.nationalities)
     return out
 
 
@@ -905,14 +919,29 @@ def _signature(fmt: CVFormat, p: Profile | None, language: str, today: date) -> 
     if not fmt.signature:
         return ""
     place = p.city if p and p.city else ""
-    stamp = today.strftime("%d.%m.%Y")
-    return f"{place}, {stamp}" if place else stamp
+    if language == "en":
+        stamp = f"{today.day} {EN_MONTHS[today.month - 1]} {today.year}"
+        return f"{place}, {stamp}" if place else stamp
+    stamp = f"{'1er' if today.day == 1 else today.day} {FR_MONTHS[today.month - 1]} {today.year}"
+    return f"{place}, le {stamp}" if place else f"Le {stamp}"
+
+
+LANG_NAME = {"fr": ("français", "French", "française"), "en": ("anglais", "English", "anglaise")}
+
+
+def language_note(language: str, target: str) -> str:
+    cur, tgt = LANG_NAME[language], LANG_NAME[target]
+    return t(f"Ce CV est rédigé en {cur[0]}, comme votre CV d'origine. Le jury de cette bourse attend un CV en {tgt[0]} : importez la version {tgt[2]} de votre CV pour obtenir la même adaptation dans cette langue.",
+             f"This CV is written in {cur[1]}, like your original CV. The panel for this scholarship expects a CV in {tgt[1]}: import the {tgt[1]} version of your CV to get the same adaptation in that language.")
 
 
 def build_cv_rules(cv_text: str, p: Profile | None, s: Scholarship | None, email: str | None, today: date | None = None) -> dict:
     today = today or date.today()
     fmt, reason = choose_format(s, p)
-    language = document_language(s, p)
+    target_language = document_language(s, p)
+    # Sans IA, on ne traduit pas : un CV mi-français mi-anglais serait pire qu'un CV complet dans sa langue d'origine.
+    source_language = writing.detect_language(cv_text)
+    language = source_language if source_language in ("fr", "en") and source_language != target_language else target_language
     raw = split_sections(cv_text)
     changes: list[str] = []
     sections_by_key: dict[str, dict] = {}
@@ -984,16 +1013,29 @@ def build_cv_rules(cv_text: str, p: Profile | None, s: Scholarship | None, email
 
     summary = personal_summary(raw, sections_by_key, p, s, language, today)
     if summary:
-        changes.append(t(f"{fmt.summary_title_fr} réécrit pour cette bourse : votre diplôme, votre expérience, vos compétences clés et votre objectif d'études.",
-                         f"{fmt.summary_title_en} rewritten for this scholarship: your degree, experience, key skills and study goal."))
+        changes.append(t(f"Rubrique « {fmt.summary_title_fr} » réécrite pour cette bourse : votre diplôme, votre expérience, vos compétences clés et votre objectif d'études.",
+                         f"\"{fmt.summary_title_en}\" section rewritten for this scholarship: your degree, experience, key skills and study goal."))
     head_job = sum(1 for l in cv_text.splitlines()[:6] if is_job_mention(l))
     if removed_job or head_job or (raw.get("profil") and is_job_mention(raw["profil"])):
         changes.append(t("Mentions propres à une recherche d'emploi retirées (CDI, CDD, disponibilité) : elles n'ont pas leur place dans une candidature à une bourse.",
                          "Job-search mentions removed (contract type, availability): they do not belong in a scholarship application."))
     changes.insert(0, t(f"Format appliqué : {fmt.label}.", f"Format applied: {fmt.label_en}."))
+    if language != target_language:
+        changes.append(language_note(language, target_language))
+    if language == "en":
+        # Typographie anglaise : pas d'espace avant « : ; ! ? » (le nettoyage par défaut suit l'usage français)
+        en_typo = lambda x: re.sub(r"\s+([:;!?])", r"\1", x or "")
+        for sec in sections:
+            sec["items"] = [en_typo(i) for i in sec["items"]]
+            for e in sec["entries"]:
+                e["bullets"] = [en_typo(b) for b in e["bullets"]]
+                for k in ("title", "organization", "location", "dates"):
+                    e[k] = en_typo(e.get(k, ""))
+        summary = en_typo(summary)
 
     return {
         "language": language,
+        "target_language": target_language,
         "format": fmt.code,
         "format_label": fmt.label_en if language == "en" else fmt.label,
         "format_reason": reason,
@@ -1088,7 +1130,7 @@ Règles de forme :
 - Pas de tiret cadratin ni demi-cadratin comme ponctuation, pas de point-virgule en fin de ligne,
   pas de point final sur les lignes d'expérience, pas de crochets ni d'emplacement à compléter.
 - Aucune formule creuse (« passionné », « dynamique et motivé », « force de proposition », « team player »).
-- changes : 3 à 6 phrases courtes en français, au vouvoiement, qui expliquent ce qui a été adapté et pourquoi."""
+- changes : 3 à 6 phrases courtes, au vouvoiement (dans la langue indiquée pour les explications), qui expliquent ce qui a été adapté et pourquoi."""
 
 
 def build_cv(cv_text: str, p: Profile | None, s: Scholarship | None, email: str | None, use_ai: bool) -> dict:
@@ -1114,7 +1156,9 @@ Expériences (profil) : {p.experiences or '-'}
 Engagement (profil) : {p.engagement or '-'}
 Projet : {p.project or '-'}
 """
-    user = f"""Langue du CV : {'anglais' if base['language'] == 'en' else 'français'}
+    lang = base.get("target_language") or base["language"]
+    user = f"""Langue du CV : {'anglais' if lang == 'en' else 'français'} (tout le CV est rédigé dans cette langue, y compris le titre, les catégories de compétences, les intitulés de postes et les niveaux de langue ; les noms d'établissements et d'entreprises restent tels quels)
+Langue des explications « changes » : {'anglais' if is_en() else 'français'}
 Ligne objectif proposée : {base['header'].get('objective') or '-'}
 Premier jet du profil (à réécrire, plus précis et propre à la personne) : {base['summary'] or '-'}
 Format : {base['format_label']}
@@ -1130,7 +1174,6 @@ CV D'ORIGINE
     if not data or not data.get("sections"):
         return base
     fmt = next((f for f in [choose_format(s, p)[0]]), None)
-    lang = base["language"]
     sections = []
     for sec in data["sections"]:
         entries = []
@@ -1149,7 +1192,17 @@ CV D'ORIGINE
         base["header"]["headline"] = writing.clean_punctuation(data["headline"], lang).rstrip(".")
     if data.get("objective") and not is_job_mention(data["objective"]):
         base["header"]["objective"] = writing.clean_punctuation(data["objective"], lang).rstrip(".")
-    base["changes"] = [t(f"Format appliqué : {fmt.label}.", f"Format applied: {fmt.label_en}.")] + [writing.complete_sentence(writing.clean_punctuation(c)) for c in data.get("changes", [])][:6]
+    if lang != base["language"]:
+        # Version traduite : en-tête, titres et ligne objectif repris dans la langue de la bourse
+        fresh = header_from(p, cv_text, email, fmt, lang, s, None, date.today())
+        for k in ("location", "objective", "nationality", "birth_date"):
+            base["header"][k] = fresh[k]
+        if not data.get("headline"):
+            base["header"]["headline"] = fresh["headline"]
+        base["language"] = lang
+        base["summary_title"] = fmt.summary_title_en if lang == "en" else fmt.summary_title_fr
+        base["format_label"] = fmt.label_en if lang == "en" else fmt.label
+    base["changes"] = [t(f"Format appliqué : {fmt.label}.", f"Format applied: {fmt.label_en}.")] + [writing.complete_sentence(writing.clean_punctuation(c, "en" if is_en() else "fr")) for c in data.get("changes", [])][:6]
     base["ai_used"] = True
     return base
 

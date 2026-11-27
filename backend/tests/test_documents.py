@@ -2,7 +2,7 @@
 import re
 from datetime import date
 
-from tests.conftest import register, login
+from tests.conftest import login
 
 CV = """Awa Diop
 awa.diop@mail.com | +221 77 123 45 67 | Dakar
@@ -22,7 +22,8 @@ Français, anglais B2"""
 
 
 def _student(client, email):
-    h = register(client, email)
+    r = client.post("/api/auth/register", json={"email": email, "password": "motdepasse1"})
+    h = {"Authorization": f"Bearer {r.json()['access_token']}"}
     r = client.put("/api/profile", headers=h, json={
         "full_name": "Awa Diop", "phone": "+221 77 123 45 67", "city": "Dakar", "residence_country": "SN", "gender": "f",
         "nationalities": ["SN"], "birth_date": str(date(date.today().year - 24, 3, 4)), "current_level": "BAC3",
@@ -122,7 +123,8 @@ def test_english_letter_layout(client):
 
 
 def test_letter_requires_header_information(client):
-    h = register(client, "vide@example.org")
+    r = client.post("/api/auth/register", json={"email": "vide@example.org", "password": "motdepasse1"})
+    h = {"Authorization": f"Bearer {r.json()['access_token']}"}
     s = _first(client, "daad")
     ctx = client.get(f"/api/letters/{s['id']}/context", headers=h).json()
     assert {m["field"] for m in ctx["missing"]} >= {"full_name", "phone", "city", "cv"}
@@ -227,3 +229,78 @@ def test_cv_follows_ats_model_and_drops_job_mentions():
     text = (cv["summary"] + " " + h["objective"] + " " + h["headline"]).lower()
     assert "cdi" not in text and "cdd" not in text and "missions" not in text
     assert "bourse d'excellence eiffel" in text and "en france" in text and "enseigner la sécurité" in text
+
+
+# ------------------------------------------------------------------ qualité de rédaction (hors-ligne)
+def test_answers_become_full_sentences():
+    from app.ai import writing
+
+    assert writing.first_person("suivre les cours de statistique", "Je souhaite", "I plan to") == "Je souhaite suivre les cours de statistique."
+    assert writing.first_person("me spécialiser en santé publique", "Je souhaite", "I plan to") == "Je souhaite me spécialiser en santé publique."
+    assert writing.first_person("Le programme combine théorie et terrain", "Je souhaite", "I plan to") == "Le programme combine théorie et terrain."
+    assert writing.first_person("to build a data team", "", "I plan to", "en") == "I plan to build a data team."
+    assert writing.country_in_en("GB", "United Kingdom") == "in the United Kingdom"
+    assert writing.detect_language("Titulaire d'un master, j'ai une expérience en réseaux") == "fr"
+    assert writing.detect_language("I hold a degree in public health and worked with the Red Cross") == "en"
+
+
+def test_dates_and_cv_sentences():
+    from app.ai.letter import _span, bullet_to_clause, parse_range
+
+    r = parse_range("Fév. 2026 - Mars 2026")
+    assert (r["sm"], r["sy"], r["em"], r["ey"], r["ongoing"]) == (2, 2026, 3, 2026, False)
+    assert parse_range("Jan 2024 - Present")["ongoing"]
+    assert _span(r, "fr", date(2026, 11, 26)) == "De février à mars 2026, "
+    assert _span(parse_range("Avr. 2023 - Avr. 2026"), "fr", date(2026, 11, 26)) == "D'avril 2023 à avril 2026, "
+    assert bullet_to_clause("Rédaction de rapports techniques structurés") == "rédigé des rapports techniques structurés"
+    assert bullet_to_clause("Installation et configuration d’environnements Windows") == "installé et configuré des environnements Windows"
+
+
+def test_offline_letter_uses_cv_and_stays_on_one_page(client):
+    from app.ai.letter import generate_letter
+    from app.export import letter_pdf
+    from app.models import Profile, Scholarship
+
+    p = Profile(full_name="Awa Diop", city="Dakar", residence_country="SN", gender="f", current_level="BAC3", target_level="BAC5",
+                domain="informatique", cv_text=CV, project="Je veux créer des outils numériques pour les centres de santé ruraux.")
+    s = Scholarship(title="Bourse d'excellence Eiffel", organization="Campus France", official_url="x", study_countries=["FR"], languages=["fr"])
+    s.id = 1
+    answers = {"study_plan": "suivre les cours de science des données", "project_after": "rentrer à Dakar pour équiper les postes de santé"}
+    L = generate_letter(p, s, answers, "fr", 450, "sobre", False)
+    body = " ".join(L["paragraphs"])
+    assert "Orange Digital Center" in body  # expérience reprise du CV
+    assert "Pendant ma formation, je souhaite suivre" in body and "je compte rentrer à Dakar" in body
+    assert not re.search(r"(^|\. )(Suivre|Rentrer)\b", body)  # aucune phrase sans sujet
+    assert L["notes"] == []
+    pdf = letter_pdf({**L, "paragraphs": L["paragraphs"] + L["paragraphs"][1:4]})  # lettre longue
+    import io
+
+    from pypdf import PdfReader
+
+    assert len(PdfReader(io.BytesIO(pdf)).pages) == 1
+
+
+def test_english_letter_with_french_material_flags_it(client):
+    from app.ai.letter import generate_letter
+    from app.models import Profile, Scholarship
+
+    p = Profile(full_name="Awa Diop", gender="f", target_level="BAC5", domain="informatique", cv_text=CV)
+    s = Scholarship(title="Chevening Scholarships", organization="Gouvernement du Royaume-Uni (FCDO)", official_url="x", study_countries=["GB"], languages=["en"])
+    s.id = 2
+    L = generate_letter(p, s, {"why_country": "les universités britanniques sont en avance sur la santé numérique"}, "en", 450, "sobre", False)
+    body = " ".join(L["paragraphs"])
+    assert "universités" not in body and "Gouvernement" not in " ".join(L["recipient"])
+    assert "in the United Kingdom" in body
+    assert len(L["notes"]) == 2
+
+
+def test_cv_keeps_source_language_without_ai():
+    from app.ai.cv import build_cv_rules
+    from app.models import Profile, Scholarship
+
+    p = Profile(full_name="Awa Diop", target_level="BAC5", domain="informatique", nationalities=["SN"])
+    s = Scholarship(title="Chevening Scholarships", organization="FCDO", official_url="x", study_countries=["GB"], languages=["en"])
+    b = build_cv_rules(CV, p, s, "awa@mail.com", today=date(2026, 11, 26))
+    assert b["language"] == "fr" and b["target_language"] == "en"
+    assert all(sec["title"].isupper() or sec["title"][0].isupper() for sec in b["sections"])
+    assert any("importez la version anglaise" in c for c in b["changes"])

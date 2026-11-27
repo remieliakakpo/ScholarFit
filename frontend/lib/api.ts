@@ -1,5 +1,4 @@
-// Client de l'API FastAPI. La session est un cookie httpOnly posé par l'API : le JavaScript de la
-// page ne le voit jamais (une faille XSS ne peut pas le voler). Le navigateur l'envoie tout seul.
+// Client de l'API FastAPI. Le jeton de connexion est gardé dans le navigateur.
 // Vide par défaut : les appels passent par le site lui-même (/api, relayé par next.config.mjs).
 // Ne renseigner NEXT_PUBLIC_API_URL que si l'API est sur un autre domaine en production.
 import { Lang, clientLang, locale, translate } from "./i18n";
@@ -7,48 +6,25 @@ import { Lang, clientLang, locale, translate } from "./i18n";
 export const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 const DOWN_FR = "Le serveur de ScholarFit ne répond pas. Vérifiez que la fenêtre « API ScholarFit » ouverte par start.ps1 tourne toujours, puis rechargez la page.";
 const DOWN = () => translate(clientLang(), DOWN_FR);
-// Simple indice « une session a été ouverte dans ce navigateur » (pas un secret) : évite d'appeler
-// /api/auth/me à chaque page pour un visiteur. L'API reste seule juge (cookie httpOnly).
-const SESSION_HINT = "sf_signed_in";
-const OLD_TOKEN_KEY = "bm_token"; // ancien jeton gardé en localStorage : effacé
+const TOKEN_KEY = "bm_token";
 
-export function isSignedIn(): boolean {
-  if (typeof window === "undefined") return false;
+export function getToken(): string | null {
+  if (typeof window === "undefined") return null;
   try {
-    localStorage.removeItem(OLD_TOKEN_KEY);
-    return localStorage.getItem(SESSION_HINT) === "1";
+    return localStorage.getItem(TOKEN_KEY);
   } catch {
-    return true; // stockage bloqué : on demande à l'API
+    return null;
   }
 }
 
-export function setSignedIn(on: boolean) {
+export function setToken(token: string | null) {
   try {
-    if (on) localStorage.setItem(SESSION_HINT, "1");
-    else localStorage.removeItem(SESSION_HINT);
+    if (token) localStorage.setItem(TOKEN_KEY, token);
+    else localStorage.removeItem(TOKEN_KEY);
   } catch {
     /* navigation privée */
   }
   window.dispatchEvent(new Event("auth-change"));
-}
-
-/** En-têtes communs. X-Requested-With est exigé par l'API sur toute modification (protection CSRF). */
-export function apiHeaders(init?: HeadersInit): Headers {
-  const headers = new Headers(init);
-  headers.set("X-Requested-With", "ScholarFit");
-  return headers;
-}
-
-export const CREDENTIALS: RequestCredentials = API_URL ? "include" : "same-origin";
-
-/** Déconnexion : l'API efface le cookie, puis on oublie l'indice local. */
-export async function signOut() {
-  try {
-    await fetch(`${API_URL}/api/auth/logout`, { method: "POST", headers: apiHeaders(), credentials: CREDENTIALS });
-  } catch {
-    /* hors ligne : le cookie expirera de lui-même */
-  }
-  setSignedIn(false);
 }
 
 export class ApiError extends Error {
@@ -58,18 +34,20 @@ export class ApiError extends Error {
 }
 
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const headers = apiHeaders(init.headers);
+  const headers = new Headers(init.headers);
+  const token = getToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
   if (init.body && !(init.body instanceof FormData)) headers.set("Content-Type", "application/json");
   let res: Response;
   try {
     const lang = clientLang();
     if (lang !== "fr") headers.set("Accept-Language", lang);
     const url = lang !== "fr" && path.startsWith("/api") ? `${path}${path.includes("?") ? "&" : "?"}lang=${lang}` : path;
-    res = await fetch(`${API_URL}${url}`, { ...init, headers, credentials: CREDENTIALS });
+    res = await fetch(`${API_URL}${url}`, { ...init, headers });
   } catch {
     throw new ApiError(0, DOWN());
   }
-  if (res.status === 401 && isSignedIn()) setSignedIn(false);
+  if (res.status === 401 && token) setToken(null);
   if (!res.ok) {
     const isJson = (res.headers.get("content-type") || "").includes("json");
     if (!isJson && res.status >= 500) throw new ApiError(res.status, DOWN());
@@ -273,7 +251,13 @@ export type StudentSummary = {
   language_scores: Record<string, number>; project: string | null; experiences: string | null; cv_text: string | null; completeness: number;
 };
 
+export type CoachingFile = {
+  id: number; author_role: string; category: "livrable" | "piece" | "preuve_depot"; filename: string;
+  content_type: string; size: number; note: string | null; created_at: string; mine: boolean;
+};
+
 export type CoachingDetail = Coaching & {
+  files?: CoachingFile[];
   steps: Step[];
   messages: CoachingMessage[];
   meetings: Meeting[];

@@ -53,8 +53,8 @@ cd backend
 python -m venv .venv
 source .venv/bin/activate            # Windows : .venv\Scripts\activate
 pip install -r requirements-dev.txt
-cp .env.example .env                 # APP_ENV=dev (poste de développement) ; ajoute ta clé ANTHROPIC_API_KEY si besoin
-python -m app.cli seed               # migrations + 98 opportunités (82 bourses, 10 stages, 6 conférences) + comptes de démo
+cp .env.example .env                 # facultatif : ajoute ta clé ANTHROPIC_API_KEY
+python -m app.cli seed               # base SQLite + 98 opportunités (82 bourses, 10 stages, 6 conférences) + comptes de démo
 uvicorn app.main:app --reload --port 8000
 
 # 2. Site (dans un autre terminal)
@@ -71,14 +71,11 @@ npm run dev                          # relaie /api vers http://127.0.0.1:8000
 Le pilote PostgreSQL est dans `backend/requirements-postgres.txt` (installé par le Dockerfile) : l'installation locale avec SQLite n'en a pas besoin.
 
 
-Docker lance la plateforme **comme en production** : l'API refuse de démarrer sans `SECRET_KEY`, aucun compte de démo n'est créé, et l'API n'est pas exposée (le navigateur passe par le site).
-
 ```bash
-SECRET_KEY=$(python -c "import secrets; print(secrets.token_urlsafe(48))") docker compose up --build
-docker compose exec api python -m app.cli create-admin vous@exemple.org   # mot de passe affiché une fois
+docker compose up --build
 ```
 
-Les variables (`SECRET_KEY`, `POSTGRES_PASSWORD`, `FRONTEND_URL`, `ADMIN_EMAILS`, `SMTP_*`, `ANTHROPIC_API_KEY`) peuvent aussi aller dans un fichier `.env` à côté de `docker-compose.yml`. Pour essayer avec les comptes de démo : `APP_ENV=dev SECRET_KEY=... docker compose up --build`.
+Lance PostgreSQL, l'API et le site. Pour activer l'IA : `ANTHROPIC_API_KEY=sk-... docker compose up --build`.
 
 ### Comptes de démo
 
@@ -88,34 +85,17 @@ Les variables (`SECRET_KEY`, `POSTGRES_PASSWORD`, `FRONTEND_URL`, `ADMIN_EMAILS`
 | Administrateur | `admin@example.org` | `admin12345` |
 | Conseiller (accompagnement, français/anglais, France, Canada, Belgique) | `conseiller@example.org` | `conseil12345` |
 
-Ces comptes n'existent **qu'avec `APP_ENV=dev`** (ce que font `start.ps1`, `start.sh` et `.env.example`). En production, aucun compte à mot de passe connu n'est créé : utilisez `python -m app.cli create-admin EMAIL`.
+Ces trois comptes sont créés **et réparés à chaque démarrage de l'API** (`app/demo.py`) : même si l'API est lancée sans `start.ps1`, depuis un autre dossier, ou si `ADMIN_EMAILS` contient votre propre adresse, ces identifiants marchent. Après la connexion, chacun arrive sur son tableau de bord : « Mes bourses » pour l'étudiante, `/admin` pour l'administrateur, `/conseiller` pour le conseiller. La base SQLite est toujours `backend/bourses.db`, quel que soit le dossier de lancement.
 
-## Sécurité des comptes
+Avant toute mise en ligne : mettez `DEMO_ACCOUNTS=false` (les mots de passe ci-dessus sont publics) et changez `SECRET_KEY`.
 
-| Point | Comment |
-|---|---|
-| Session | Cookie `sf_session` **httpOnly** (illisible par le JavaScript de la page, donc hors de portée d'une faille XSS), `SameSite=Lax`, `Secure` hors développement. Valable 24 h, renouvelé tant que la personne est active, jamais plus de 30 jours après la connexion (`TOKEN_EXPIRE_MINUTES`, `SESSION_MAX_DAYS`). Aucun jeton dans `localStorage` (l'ancien `bm_token` est effacé). |
-| Révocation | Changer ou réinitialiser son mot de passe déconnecte tous les appareils (`token_version` du compte). `POST /api/auth/logout` efface le cookie. |
-| CSRF | Toute requête qui modifie quelque chose doit porter l'en-tête `X-Requested-With` (ajouté par `lib/api.ts`), en plus du cookie `SameSite=Lax`. |
-| Secret | Hors `APP_ENV=dev`, l'API refuse de démarrer si `SECRET_KEY` fait moins de 32 caractères ou reprend un exemple du dépôt. `/docs` n'est servi qu'en développement. |
-| Tentatives | Connexion : 20 essais / 15 min par adresse IP et 5 erreurs / 15 min par compte. Inscription : 5 / 15 min. Mot de passe oublié : 5 / 15 min par IP et 3 e-mails / heure par compte. `email-disponible` : 30 / 15 min. Compteurs en mémoire (un seul processus d'API ; Redis à prévoir au-delà). L'adresse réelle est lue dans `X-Forwarded-For` seulement si la requête vient d'un relais de `TRUSTED_PROXIES`. |
-| Adresse e-mail | Lien de confirmation (48 h) envoyé à l'inscription, bouton « Renvoyer le lien » dans l'espace connecté. Une adresse confirmée est exigée pour déclarer un paiement et demander un accompagnement. Les adresses de `ADMIN_EMAILS` ne deviennent administratrices **qu'après confirmation** (sinon n'importe qui pourrait s'inscrire avec avant son titulaire). |
-| Mot de passe oublié | `/mot-de-passe-oublie` : même réponse que l'adresse ait un compte ou non ; lien valable 1 h, utilisable une fois. Changement de mot de passe depuis le profil. |
-| E-mails | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`. Sans `SMTP_HOST`, en développement, le message (avec son lien) s'affiche dans la fenêtre « API ScholarFit ». |
-| Données personnelles | Acceptation de la politique de confidentialité (`/confidentialite`) enregistrée à l'inscription. Les situations sensibles (réfugié, handicap…) ne sont gardées qu'avec un accord daté, retiré en les décochant. Export complet en JSON depuis le profil (`GET /api/profile/export`), suppression du compte en un clic. |
-| En-têtes | `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy`, HSTS en production (`next.config.mjs`) ; réponses personnelles de l'API en `Cache-Control: private, no-store`. Images Docker sans droits root. |
+### Comptes, confirmation de l'e-mail et mot de passe oublié
 
-### Migrations de la base (Alembic)
-
-Le schéma est décrit par les migrations de `backend/migrations/versions/`, appliquées toutes seules au démarrage de l'API et par `python -m app.cli seed`. Une base créée avant Alembic est reprise sans perte (colonnes manquantes ajoutées, puis marquée au niveau actuel). Après une modification de `app/models.py` :
-
-```bash
-cd backend
-alembic revision --autogenerate -m "ce qui change"   # relire le fichier créé dans migrations/versions/
-alembic upgrade head
-```
-
-La CI vérifie que les migrations correspondent aux modèles (`alembic check`).
+- L'inscription demande un **prénom ou nom d'utilisateur**, affiché ensuite en haut de l'espace (« Salut, Awa »). Il se modifie dans Profil > Mon compte. Les anciens comptes sans nom affichent le prénom du profil, sinon le début de l'e-mail.
+- Après l'inscription, un **e-mail de confirmation** part avec un lien valable 48 h (`VERIFY_LINK_HOURS`). Tant que l'adresse n'est pas confirmée, un bandeau le rappelle dans l'espace avec un bouton « Renvoyer le lien » (un envoi par minute au plus).
+- **Mot de passe oublié** : lien sous le champ mot de passe de la connexion. L'e-mail contient un lien valable 60 min (`RESET_LINK_MINUTES`) qui ne sert qu'une fois. La réponse est la même que l'adresse ait un compte ou non.
+- **Sans SMTP configuré** (en local), les e-mails ne partent pas : ils sont écrits dans la fenêtre « API ScholarFit », lien compris. Copiez le lien dans le navigateur.
+- **Pour envoyer de vrais e-mails**, renseignez dans `backend/.env` : `SMTP_HOST`, `SMTP_PORT` (587, ou 465 avec `SMTP_SSL=true`), `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`, et `SITE_URL` (adresse publique du site, utilisée dans les liens). Brevo (300 e-mails par jour gratuits), Mailjet ou un compte Gmail avec mot de passe d'application conviennent.
 
 ## Collecte des bourses, stages et conférences dans le monde entier
 
@@ -174,6 +154,9 @@ Règles de collecte (`app/scrapers/base.py`) : lecture de `robots.txt`, une requ
 | `POST /api/accompagnement` | Accepte `offer` (`standard` ou `premium`) ; prix figé et statut de paiement |
 | `PATCH /api/admin/accompagnement/{id}/paiement` | L'admin marque le paiement reçu |
 | `POST /api/admin/liens/verifier`, `GET /api/admin/liens/casses` | Vérifier les liens, lister les liens morts |
+| `POST /api/auth/verification/envoyer`, `POST /api/auth/verification` | Renvoyer le lien de confirmation de l'e-mail, confirmer l'adresse avec le jeton du lien |
+| `POST /api/auth/mot-de-passe-oublie`, `POST /api/auth/reinitialiser` | Recevoir un lien de réinitialisation, choisir un nouveau mot de passe avec ce lien |
+| `PATCH /api/auth/me` | Changer son nom d'utilisateur |
 | `GET /api/auth/email-disponible` | Prévenir dès la saisie qu'un compte existe déjà. Mot de passe : 8 caractères minimum avec une lettre et un chiffre |
 
 ### Version anglaise
@@ -227,11 +210,7 @@ backend/                      API FastAPI (Python)
     scrapers/                 collecte polie, extraction, dédoublonnage, connecteurs
     routers/                  routes de l'API
     data/                     sources.json, bourses d'exemple
-    security.py               mots de passe, cookie de session, liens signés (e-mail, mot de passe oublié)
-    ratelimit.py              limitation des tentatives
-    mailer.py                 envoi des e-mails (SMTP, ou console en développement)
-    cli.py                    seed, create-admin, collect, extract, nightly
-  migrations/                 migrations Alembic du schéma
+    cli.py                    seed, collect, extract, nightly
   tests/                      tests (pytest), sans réseau ni clé API
 frontend/                     site Next.js 15 (React, TypeScript, Tailwind)
   app/                        pages : accueil, bourses, profil, mes-bourses, suivi, accompagnement, conseiller, cv, lettre, admin
@@ -244,20 +223,37 @@ docker-compose.yml            PostgreSQL + API + site
 ## Tests
 
 ```bash
-cd backend && python -m pytest -q        # 33 tests : API, matching, chat, CV, lettres, admin, accompagnement, monde entier, dates limites, questionnaire, offres, liens, stages et conférences, agrégateurs, IA simulée
+cd backend && python -m pytest -q        # 72 tests : paiement en ligne, e-mails et rappels, pages pays, documents d'accompagnement, API, comptes (démo, e-mail, mot de passe oublié), matching, chat, CV, lettres, admin, accompagnement, monde entier, dates limites, questionnaire, offres, liens, stages et conférences, agrégateurs, IA simulée
 cd frontend && npm run typecheck && npm run build
 ```
 
+Tests de bout en bout (vrai navigateur, site et API lancés, `PAYMENT_PROVIDER=simulation`) : connexion, questionnaire et scores, page Postuler, CV, abonnement payé, accompagnement payé avec envoi d'un document, pages publiques sur ordinateur et mobile.
+
+```bash
+cd e2e && npm install && npx playwright install chromium
+npx playwright test                       # E2E_BASE_URL=https://www.votre-domaine.org pour tester le site en ligne
+```
+
+## Lancement : paiement, e-mails, pages pays, pages légales
+
+- **Paiement en ligne (CinetPay)** : abonnement CV (2 500 F CFA), accompagnement Standard (15 000 F CFA) et Premium (35 000 F CFA). `app/payments.py`, `app/routers/payments.py`, pages `/paiement/simulation` (guichet d'essai) et `/paiement/retour`. Le statut est toujours revérifié auprès de CinetPay, l'accès n'est accordé qu'une fois, et les paiements restés en attente sont revérifiés toutes les 15 minutes. Le paiement par transfert reste proposé en dessous. Suivi dans /admin > Paiements en ligne.
+- **E-mails** (`app/mailer.py`, partagé avec les comptes) : console, SMTP, Brevo ou Resend. Rappels J-30, J-14, J-7, J-3, J-1 ; nouvelles bourses groupées en un seul e-mail ; reçus de paiement ; messages d'accompagnement (au plus un e-mail toutes les 30 minutes). Tout envoi est tracé dans `email_log`. Essai : `python -m app.cli test-email vous@exemple.org`.
+- **Qualité des offres** : les offres expirées et celles dont le lien officiel est mort ne sont plus affichées ni comptées ; chaque fiche indique sa date de mise à jour.
+- **Espace conseiller** : files « À traiter » (payé), « En attente de paiement » et « Clos », compteurs d'étapes en retard et de messages non lus. Onglet **Documents** dans chaque accompagnement : le candidat envoie ses pièces, l'expert livre les documents et la preuve de dépôt (PDF, Word, JPG, PNG, 8 Mo).
+- **Référencement** : `/destinations` (pays par continent), `/destinations/france`, `/destinations/france/bourses|stages|conferences`, avec titre, description, adresse canonique et données structurées ; `sitemap.xml` et `robots.txt`.
+- **Pages légales** : `/a-propos`, `/conditions`, `/confidentialite` (FR et EN), liées dans le pied de page. Identité de l'éditeur dans les variables `NEXT_PUBLIC_COMPANY_*` et `NEXT_PUBLIC_CONTACT_*`.
+- **Mise en ligne** : `python -m app.cli check-config` liste ce qui manque ; `python -m app.cli backup` exporte toute la base. Voir DEPLOIEMENT.md partie 8.
+
 ## Variables d'environnement
 
-Backend (`backend/.env`, voir `.env.example`) : `DATABASE_URL`, `SECRET_KEY`, `CORS_ORIGINS`, `ADMIN_EMAILS`, `ANTHROPIC_API_KEY`, `CLAUDE_MODEL` (par défaut `claude-opus-5-5`), `AI_FREE_GENERATIONS_PER_DAY`, `COACHING_AUTO_ASSIGN` (par défaut `true` ; à `false`, chaque demande d'accompagnement attend qu'un administrateur choisisse le conseiller), `SCRAPER_USER_AGENT`, `SCRAPER_MIN_DELAY_SECONDS`, `OFFER_STANDARD_PRICE`, `OFFER_PREMIUM_PRICE`, `AUTO_COLLECT_HOURS` (6 par défaut, 0 pour désactiver), `RELIEFWEB_APPNAME`, `AI_DISCOVERY_ENABLED`, `AI_DISCOVERY_MAX_SEARCHES`.
+Backend (`backend/.env`, voir `.env.example`) : `DATABASE_URL`, `SECRET_KEY`, `CORS_ORIGINS`, `ADMIN_EMAILS`, `DEMO_ACCOUNTS` (par défaut `true`), `SITE_URL`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_SSL`, `VERIFY_LINK_HOURS`, `RESET_LINK_MINUTES`, `ANTHROPIC_API_KEY`, `CLAUDE_MODEL` (par défaut `claude-opus-5-5`), `AI_FREE_GENERATIONS_PER_DAY`, `COACHING_AUTO_ASSIGN` (par défaut `true` ; à `false`, chaque demande d'accompagnement attend qu'un administrateur choisisse le conseiller), `SCRAPER_USER_AGENT`, `SCRAPER_MIN_DELAY_SECONDS`, `OFFER_STANDARD_PRICE`, `OFFER_PREMIUM_PRICE`, `AUTO_COLLECT_HOURS` (6 par défaut, 0 pour désactiver), `RELIEFWEB_APPNAME`, `AI_DISCOVERY_ENABLED`, `AI_DISCOVERY_MAX_SEARCHES`, `API_PUBLIC_URL`, `PAYMENT_PROVIDER` (`simulation` par défaut, `cinetpay`, `manuel`), `CINETPAY_APIKEY`, `CINETPAY_SITE_ID`, `CINETPAY_SECRET_KEY`, `EMAIL_BACKEND` (`console`, `smtp`, `brevo`, `resend`), `EMAIL_REPLY_TO`, `BREVO_API_KEY`, `RESEND_API_KEY`.
 
 Site (`frontend/.env.local`) : `API_URL_INTERNAL` (adresse de l'API pour le serveur Next.js, `http://127.0.0.1:8000` par défaut) ; `NEXT_PUBLIC_API_URL` seulement si l'API est sur un autre domaine en production (sinon laisser vide) . Les numéros de don (Flooz, Mixx by Yas) sont dans `frontend/components/Support.tsx` (constante `NUMBERS`), les logos dans `frontend/public/paiement/`.
 
 ## Ce qui reste à faire (suite du plan)
 
-- **Paiement en ligne** : brancher un agrégateur Mobile Money (CinetPay, PayDunya, Wave, Orange Money) sur `POST /api/accompagnement`.
-- **Envoi réel des alertes** : brancher un service d'e-mail (Brevo, Resend, SMTP) ou WhatsApp dans `app/alerts.py` et planifier `python -m app.cli nightly`.
+- **Paiement en ligne** : ouvrir le compte marchand CinetPay et faire un premier paiement réel (voir DEPLOIEMENT.md 8.3).
+- **Alertes WhatsApp** : en plus des e-mails, via l'API WhatsApp Business.
 - **Connecteurs réels** : vérifier robots.txt et conditions de chaque source, ajuster les sélecteurs, demander des partenariats.
 - **Recherche sémantique** : remplacer la similarité par mots-clés par des embeddings stockés dans PostgreSQL avec pgvector.
 - **Migrations de base** : ajouter Alembic avant la première mise en production (le MVP crée les tables au démarrage).

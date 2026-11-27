@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import AdminCoaching from "@/components/AdminCoaching";
+import AdminPayments from "@/components/AdminPayments";
 import AdminCredits from "@/components/docs/AdminCredits";
 import RequireAuth from "@/components/RequireAuth";
 import { Meta, Scholarship, api, getMeta } from "@/lib/api";
@@ -68,6 +69,7 @@ function Admin() {
       {log && <pre className="card overflow-x-auto whitespace-pre-wrap p-4 text-xs">{log}</pre>}
 
       <AdminCoaching meta={meta} />
+      <AdminPayments />
       <AdminCredits />
 
       <section className="space-y-3">
