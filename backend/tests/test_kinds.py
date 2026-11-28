@@ -99,7 +99,9 @@ def test_sources_file_enables_existing_sources(client):
         assert db.query(Source).filter(Source.name.like("Campus France%")).one().enabled is True
         corners = next(c for c in load_source_configs() if c["name"] == "Opportunities Corners")
         assert {f["kind"] for f in corners["feeds"]} == set(KINDS)
-        assert all(c.get("enabled", True) for c in load_source_configs())
+        # toutes activées, sauf EURAXESS : plus de flux, et le site bloque les robots (voir sa note)
+        off = [c["name"] for c in load_source_configs() if not c.get("enabled", True)]
+        assert len(off) == 1 and off[0].startswith("EURAXESS")
     finally:
         db.close()
 

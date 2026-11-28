@@ -206,9 +206,12 @@ def org_from_url(url: str) -> str:
 
 
 def _crawl_detail_pages(db: Session, source: Source, urls: list[str], fetcher: PoliteFetcher, limit: int,
-                        aggregator: bool = False, kind: str | None = None, kinds: dict[str, str] | None = None) -> tuple[int, int]:
+                        aggregator: bool = False, kind: str | None = None, kinds: dict[str, str] | None = None,
+                        fetch=None, defaults: dict | None = None, overrides: dict | None = None) -> tuple[int, int]:
     """``aggregator`` : site qui relaie des offres (Afri-Carrières, Opportunity Desk…). On garde la page vue
-    dans ``source_page`` et on remplace le lien par celui du site officiel de l'organisme quand on le trouve."""
+    dans ``source_page`` et on remplace le lien par celui du site officiel de l'organisme quand on le trouve.
+    ``fetch`` : lecture d'une annonce autre qu'une page web (fiche d'une API mise en HTML, ex. Campus Bourses).
+    ``defaults`` : valeurs des champs restés vides ; ``overrides`` : valeurs imposées par la source."""
     import hashlib
 
     from ..models import SeenPage
@@ -226,7 +229,7 @@ def _crawl_detail_pages(db: Session, source: Source, urls: list[str], fetcher: P
         urls = [u for u in urls if u not in known]
     for url in urls[:limit]:
         try:
-            html = fetcher.get(url)
+            html = fetch(url) if fetch else fetcher.get(url)
         except RobotsDisallowed:
             log.info("robots.txt interdit %s : ignoré", url)
             continue
@@ -247,7 +250,8 @@ def _crawl_detail_pages(db: Session, source: Source, urls: list[str], fetcher: P
         ctx = {"url": url, "source_id": source.id, "aggregator": aggregator, "kind": (kinds or {}).get(url) or kind,
                # type donné par la catégorie du site (classement fait par ses rédacteurs) : il prime
                "category_kind": (kinds or {}).get(url),
-               "official_link": official_link(html, url) if aggregator else None}
+               "official_link": official_link(html, url) if aggregator else None,
+               "defaults": defaults or {}, "overrides": overrides or {}}
         if batch and not local:  # premier passage envoyé avec les autres à la fin du passage, moitié prix
             from ..ai.batch import enqueue
 
@@ -296,6 +300,10 @@ def finish_record(db: Session, source: Source | None, record: dict | None, ctx: 
             record["official_url"] = ctx.get("official_link") or url
         if record.get("organization") == name:
             record["organization"] = org_from_url(record["official_url"]) or name
+    for key, value in (ctx.get("defaults") or {}).items():
+        if not record.get(key):
+            record[key] = value
+    record.update(ctx.get("overrides") or {})
     if ctx.get("category_kind"):
         record["kind"] = ctx["category_kind"]
     elif ctx.get("kind") and not record.get("kind"):
@@ -429,6 +437,12 @@ def run_site(db: Session, source: Source, cfg: dict) -> tuple[int, int]:
         fetcher.close()
 
 
+def run_campusbourses(db: Session, source: Source, cfg: dict) -> tuple[int, int]:
+    from .campusbourses import run
+
+    return run(db, source, cfg)
+
+
 def run_reliefweb(db: Session, source: Source, cfg: dict) -> tuple[int, int]:
     from .reliefweb import run
 
@@ -436,7 +450,7 @@ def run_reliefweb(db: Session, source: Source, cfg: dict) -> tuple[int, int]:
 
 
 CONNECTORS = {"json": run_json, "rss": run_rss, "page_list": run_page_list, "ai_discovery": run_ai_discovery, "site": run_site,
-              "reliefweb": run_reliefweb}
+              "reliefweb": run_reliefweb, "campusbourses": run_campusbourses}
 
 
 def load_source_configs() -> list[dict]:

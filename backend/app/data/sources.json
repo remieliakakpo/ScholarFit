@@ -228,22 +228,23 @@
   },
   {
     "name": "EURAXESS (offres de doctorat, flux RSS)",
-    "url": "https://euraxess.ec.europa.eu/jobs/feed",
-    "method": "rss",
-    "connector": "rss",
-    "limit": 20,
-    "enabled": true,
-    "note": "Exemple de connecteur RSS. Vérifier l'URL exacte du flux et les conditions d'utilisation avant d'activer."
-  },
-  {
-    "name": "Campus France : annuaire Campus Bourses",
-    "url": "https://www.campusfrance.org/fr/bourses-etudiants-internationaux",
+    "url": "https://euraxess.ec.europa.eu/jobs/search",
     "method": "page",
     "connector": "page_list",
     "link_selector": "a",
-    "link_pattern": "/fr/.*bourse",
-    "limit": 20,
+    "link_pattern": "/jobs/\\d+$",
+    "limit": 10,
+    "enabled": false,
+    "note": "Désactivée (vérifié en novembre 2026) : EURAXESS n'a plus de flux RSS (/jobs/feed renvoie 404) et bloque les robots dès qu'on filtre ou pagine la recherche (403, 429). Seule la page brute des 10 dernières offres de recherche est lisible, et ce sont surtout des postes de chercheurs que l'extraction écarte. À reprendre par un partenariat ou une saisie manuelle des appels de financement doctoral."
+  },
+  {
+    "name": "Campus France : annuaire Campus Bourses",
+    "url": "https://campusbourses.campusfrance.org/",
+    "method": "api",
+    "connector": "campusbourses",
+    "limit": 60,
+    "frequency_hours": 168,
     "enabled": true,
-    "note": "Exemple de connecteur liste + fiches. Lire robots.txt et les CGU, et privilégier un partenariat."
+    "note": "Annuaire Campus Bourses (programmes pour étudier en France). L'ancienne page /fr/bourses-etudiants-internationaux n'existe plus : on lit l'API JSON ouverte du site (bourses-api.campusfrance.org), 60 fiches par passage, les plus récentes d'abord."
   }
 ]
