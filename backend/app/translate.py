@@ -41,7 +41,7 @@ SCHEMA = {
     "required": list(FIELDS),
     "additionalProperties": False,
 }
-SYSTEM = """You translate scholarship, internship and conference listings from French into English for a student platform.
+SYSTEM = """You translate opportunity listings (scholarships, internships, conferences, trainings, competitions, exchange programmes, fellowships, online courses) from French into English for a student platform.
 Rules:
 - Keep the meaning exactly; do not add or remove conditions, numbers, dates or names.
 - Title: use the official English name of the programme when it is well known (e.g. "Bourse d'excellence Eiffel" becomes
@@ -70,17 +70,26 @@ def store(s: Scholarship, en: dict) -> None:
     s.translations = {**(s.translations or {}), "en": clean}
 
 
-def translate_one(s: Scholarship) -> bool:
-    if not get_settings().ai_enabled:
-        return False
+def translation_request(s: Scholarship) -> str:
     src = source_of(s)
     payload = {**src, "documents_detail": [{"code": k, "text": v} for k, v in (src["documents_detail"] or {}).items()]}
-    data = ask_json(SYSTEM, json.dumps(payload, ensure_ascii=False), SCHEMA, effort="low", max_tokens=4000)
+    return json.dumps(payload, ensure_ascii=False)
+
+
+def apply_translation(s: Scholarship, data: dict | None) -> bool:
     if not data or not data.get("title"):
         return False
+    data = dict(data)
     data["documents_detail"] = {d["code"]: d["text"] for d in data.get("documents_detail") or [] if d.get("text")}
     store(s, data)
     return True
+
+
+def translate_one(s: Scholarship) -> bool:
+    if not get_settings().ai_enabled:
+        return False
+    data = ask_json(SYSTEM, translation_request(s), SCHEMA, effort="low", max_tokens=4000)
+    return apply_translation(s, data)
 
 
 def ensure_en(db: Session, s: Scholarship) -> None:
@@ -97,8 +106,11 @@ def ensure_en(db: Session, s: Scholarship) -> None:
 
 def translate_missing(db: Session, limit: int = 200) -> int:
     """Traduit les fiches ouvertes sans version anglaise à jour (collecte automatique)."""
-    if not get_settings().ai_enabled:
+    settings = get_settings()
+    if not settings.ai_enabled:
         return 0
+    if settings.ai_use_batch:  # personne n'attend : traductions envoyées par lot (moitié prix)
+        return _queue_translations(db, limit)
     done = 0
     for s in db.scalars(select(Scholarship).where(Scholarship.status != "expiree")):
         if done >= limit:
@@ -113,6 +125,22 @@ def translate_missing(db: Session, limit: int = 200) -> int:
             log.exception("Traduction impossible pour %s", s.slug)
             db.rollback()
     return done
+
+
+def _queue_translations(db: Session, limit: int) -> int:
+    from .ai.batch import enqueue, pending_targets
+
+    already = pending_targets(db, "translate", "scholarship_id")
+    queued = 0
+    for s in db.scalars(select(Scholarship).where(Scholarship.status != "expiree")):
+        if queued >= limit:
+            break
+        if is_current(s) or s.id in already:
+            continue
+        enqueue(db, "translate", translation_request(s), {"scholarship_id": s.id, "hash": fingerprint(s)})
+        queued += 1
+    db.commit()
+    return queued
 
 
 def load_seed_translations(db: Session) -> int:

@@ -1,11 +1,14 @@
 """Lot sécurité : production, comptes de démo, clé, paiement, droits admin, sessions, fiches éditées, limites."""
+import pytest
 from sqlalchemy import select
 
 from app import security
 from app.config import get_settings
 from app.db import SessionLocal
 from app.models import Scholarship, User
-from tests.conftest import login
+from tests.conftest import login, session_headers
+
+TERMS = {"accept_terms": True}
 
 
 def test_production_blocks_demo_simulation_and_dev_key(client, monkeypatch):
@@ -14,10 +17,10 @@ def test_production_blocks_demo_simulation_and_dev_key(client, monkeypatch):
 
     s = get_settings()
     monkeypatch.setattr(s, "app_env", "production")
-    monkeypatch.setattr(security, "_signing_key", None)
     assert s.is_production and not s.demo_enabled
     assert payments.provider() == "manuel"  # jamais de faux guichet en ligne
-    assert security.signing_key() != s.secret_key and len(security.signing_key()) >= 64
+    with pytest.raises(RuntimeError, match="SECRET_KEY"):  # clé de développement refusée en ligne
+        s.check_production()
     db = SessionLocal()
     try:
         ensure_demo_accounts(db)
@@ -26,8 +29,7 @@ def test_production_blocks_demo_simulation_and_dev_key(client, monkeypatch):
     r = client.post("/api/auth/login", json={"email": "admin@example.org", "password": "admin12345"})
     assert r.status_code == 401
     # retour en mode local : les comptes de démo sont réparés pour les autres tests
-    monkeypatch.setattr(s, "app_env", "local")
-    monkeypatch.setattr(security, "_signing_key", None)
+    monkeypatch.setattr(s, "app_env", "dev")
     db = SessionLocal()
     try:
         ensure_demo_accounts(db)
@@ -39,13 +41,13 @@ def test_production_blocks_demo_simulation_and_dev_key(client, monkeypatch):
 def test_admin_only_after_email_confirmation(client, monkeypatch):
     s = get_settings()
     monkeypatch.setattr(s, "admin_emails", "admin@example.org,chef@gmail.com")
-    r = client.post("/api/auth/register", json={"email": "chef@gmail.com", "password": "Chef2026x", "name": "Chef"})
-    h = {"Authorization": f"Bearer {r.json()['access_token']}"}
+    r = client.post("/api/auth/register", json={"email": "chef@gmail.com", "password": "Chef2026x", "name": "Chef", **TERMS})
+    h = session_headers(client, r)
     assert client.get("/api/admin/sources", headers=h).status_code == 403
     db = SessionLocal()
     try:
         u = db.scalars(select(User).where(User.email == "chef@gmail.com")).first()
-        token = security.create_link_token(u, "verify", 60)
+        token = security.create_link_token(u, security.VERIFY_EMAIL, 60)
     finally:
         db.close()
     assert client.post("/api/auth/verification", json={"token": token}).status_code == 200
@@ -53,18 +55,19 @@ def test_admin_only_after_email_confirmation(client, monkeypatch):
 
 
 def test_password_reset_closes_other_sessions(client):
-    r = client.post("/api/auth/register", json={"email": "sessions@gmail.com", "password": "Session2026x", "name": "Sam"})
-    old = {"Authorization": f"Bearer {r.json()['access_token']}"}
+    r = client.post("/api/auth/register", json={"email": "sessions@gmail.com", "password": "Session2026x", "name": "Sam", **TERMS})
+    old = session_headers(client, r)
     assert client.get("/api/auth/me", headers=old).status_code == 200
     db = SessionLocal()
     try:
         u = db.scalars(select(User).where(User.email == "sessions@gmail.com")).first()
-        token = security.create_link_token(u, "reset", 60)
+        token = security.create_link_token(u, security.RESET_PASSWORD, 60)
     finally:
         db.close()
-    new = client.post("/api/auth/reinitialiser", json={"token": token, "password": "Nouveau2026x"}).json()["access_token"]
+    r = client.post("/api/auth/reinitialiser", json={"token": token, "password": "Nouveau2026x"})
+    new = session_headers(client, r)
     assert client.get("/api/auth/me", headers=old).status_code == 401
-    assert client.get("/api/auth/me", headers={"Authorization": f"Bearer {new}"}).status_code == 200
+    assert client.get("/api/auth/me", headers=new).status_code == 200
 
 
 def test_seed_keeps_admin_corrections(client, admin):
@@ -84,12 +87,8 @@ def test_seed_keeps_admin_corrections(client, admin):
         db.close()
 
 
-def test_login_rate_limit(client, monkeypatch):
-    from app import ratelimit
-
-    monkeypatch.setattr(get_settings(), "rate_limit_enabled", True)
-    ratelimit.reset()
+def test_login_rate_limit(client):
+    """Cinq erreurs sur un même compte : pause de 15 minutes (voir aussi test_security)."""
     codes = [client.post("/api/auth/login", json={"email": "x@gmail.com", "password": "faux12345"}).status_code
-             for _ in range(12)]
-    assert codes[:10] == [401] * 10 and codes[-1] == 429
-    ratelimit.reset()
+             for _ in range(7)]
+    assert codes[:5] == [401] * 5 and codes[5:] == [429, 429]

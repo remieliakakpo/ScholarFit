@@ -524,7 +524,7 @@ def diagnose(text: str, p: Profile | None, s: Scholarship | None, use_ai: bool, 
     rules_view = "\n".join(f"- {c['key']} : {c['score']} ({c['finding']})" for c in base["criteria"])
     user = f"Pré-analyse automatique :\n{rules_view}{focus}\n\nCV :\n{text[:15000]}"
     system = DIAG_SYSTEM + ("\n\nRédigez les constats, recommandations et explications en anglais (l'étudiant utilise le site en anglais)." if is_en() else "")
-    data = ask_json(system, user, DIAG_SCHEMA, effort="medium", max_tokens=8000)
+    data = ask_json(system, user, DIAG_SCHEMA, effort="medium", max_tokens=8000, cache=True)
     if not data:
         return base
     objective = {"coordonnees", "longueur", "chronologie"}

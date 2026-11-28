@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import Icon from "@/components/Icon";
-import Offers from "@/components/Offers";
+import AdvisorBanner from "@/components/AdvisorBanner";
 import ScholarshipCard from "@/components/ScholarshipCard";
 import { Match, Meta, Scholarship, api, getMeta } from "@/lib/api";
 import { useAuth } from "@/lib/useAuth";
@@ -46,6 +46,7 @@ function localSteps(meta: Meta): Step[] {
       { id: "nationality", label: "Votre nationalité", type: "country", required: true },
       { id: "residence_country", label: "Le pays où vous vivez aujourd'hui", type: "country" },
       { id: "birth_date", label: "Votre date de naissance", type: "date", required: true, help: "Beaucoup de bourses fixent un âge maximum." },
+      { id: "gender", label: "Vous êtes", type: "select", options: { f: "Une femme", m: "Un homme" }, help: "Facultatif. Certaines bourses et stages sont réservés aux femmes." },
     ] },
     { id: "etudes", title: "Vos études", subtitle: "Où vous en êtes aujourd'hui.", questions: [
       { id: "current_level", label: "Votre niveau actuel", type: "select", options: levels, required: true },
@@ -111,7 +112,7 @@ async function fallbackMatch(a: Answers, loggedIn: boolean): Promise<Result> {
       nationalities: nat ? [nat] : undefined, residence_country: a.residence_country || undefined, birth_date: a.birth_date || undefined,
       current_level: a.current_level || undefined, grade_average: a.grade_average === "" || a.grade_average == null ? undefined : Number(a.grade_average),
       target_level: a.target_level || undefined, domain: a.domain || undefined, wished_countries: a.wished_countries ?? undefined,
-      languages: Object.keys(languages).length ? languages : undefined, full_funding_only: Boolean(a.full_funding_only), situations: a.situations ?? undefined,
+      languages: Object.keys(languages).length ? languages : undefined, full_funding_only: Boolean(a.full_funding_only), situations: a.situations ?? undefined, gender: a.gender || undefined,
     }) });
     const m = await api<{ items: Match[] }>("/api/matches");
     return { total_matches: m.items.length, items: m.items, recommended_offer: a.help_wanted === "accompagne" ? "standard" : null, profile_saved: true };
@@ -473,8 +474,9 @@ function Results({ result, meta, loggedIn, onRestart }: { result: Result; meta: 
       <section>
         <p className="eyebrow">{t("Et maintenant")}</p>
         <h2 className="mt-2 text-[1.65rem] sm:text-3xl">{t("Postulez seul, ou faites-vous")} <span className="accent">{t("accompagner.")}</span></h2>
-        {result.recommended_offer && <p className="mt-2 text-sm text-muted">{t("D'après vos réponses, la formule")} <span className="font-semibold text-ink">{result.recommended_offer === "premium" ? t("Premium") : t("Standard")}</span> {t("vous conviendrait.")}</p>}
-        <div className="mt-6"><Offers /></div>
+        <div className="mt-6">
+          <AdvisorBanner note={result.recommended_offer ? <>{t("D'après vos réponses, la formule")} <span className="font-semibold">{result.recommended_offer === "premium" ? t("Premium") : t("Standard")}</span> {t("vous conviendrait.")}</> : undefined} />
+        </div>
       </section>
     </div>
   );

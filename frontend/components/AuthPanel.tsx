@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import Icon, { Logo } from "./Icon";
 import StudentsIllustration from "./StudentsIllustration";
-import { api, setToken } from "@/lib/api";
+import { api, setSignedIn } from "@/lib/api";
 import { useT } from "@/components/LangProvider";
 
 function strength(p: string) {
@@ -25,6 +25,22 @@ function suggestPassword() {
 }
 
 export type AuthMode = "connexion" | "inscription";
+
+/** Page où revenir après connexion : seulement une page de ce site. « //autre.site » ou « /\autre.site »
+ *  (que les navigateurs lisent comme une autre adresse) sont refusés, ce qui évite qu'un lien piégé
+ *  vers /connexion?next=… renvoie la personne, une fois connectée, vers un faux site. */
+function safeNext(next: string | null | undefined): string | null {
+  if (!next || !next.startsWith("/") || next.startsWith("//") || next.includes("\\")) return null;
+  try {
+    const u = new URL(next, window.location.origin);
+    return u.origin === window.location.origin ? u.pathname + u.search + u.hash : null;
+  } catch {
+    return null;
+  }
+}
+
+// Les comptes de démo n'existent qu'en développement (APP_ENV=dev côté API) : identifiants masqués en production.
+const SHOW_DEMO = process.env.NODE_ENV !== "production";
 
 /** Fenêtre de connexion / inscription : illustration à gauche, champs à droite. */
 export default function AuthPanel({ initialMode = "connexion", next, onClose, onSuccess }: { initialMode?: AuthMode; next?: string | null; onClose?: () => void; onSuccess?: () => void }) {
@@ -54,10 +70,10 @@ export default function AuthPanel({ initialMode = "connexion", next, onClose, on
     setError(null);
     try {
       const path = mode === "connexion" ? "/api/auth/login" : "/api/auth/register";
-      const body = mode === "connexion" ? { email, password } : { name, email, password };
-      const { access_token, home } = await api<{ access_token: string; home?: string }>(path, { method: "POST", body: JSON.stringify(body) });
-      setToken(access_token);
-      const safe = next && next.startsWith("/") && !next.startsWith("//") && next !== "/connexion" ? next : null;
+      const body = mode === "connexion" ? { email, password } : { name, email, password, accept_terms: consent };
+      const { home } = await api<{ home?: string }>(path, { method: "POST", body: JSON.stringify(body) }); // l'API pose le cookie de session
+      setSignedIn(true);
+      const safe = safeNext(next);
       onSuccess?.();
       // tableau de bord du rôle : Mes bourses (étudiant), espace conseiller, administration
       router.push(safe ?? home ?? (mode === "inscription" ? "/profil" : "/mes-bourses"));
@@ -82,7 +98,7 @@ export default function AuthPanel({ initialMode = "connexion", next, onClose, on
           <Logo onDark className="h-8" />
           <p className="mt-3 font-serif text-3xl font-bold leading-tight">{t("Votre prochain départ")} <span className="italic text-[#ffc979]">{t("commence ici.")}</span></p>
         </div>
-        <StudentsIllustration className="mx-auto -mb-8 mt-4 w-full max-w-[340px]" />
+        <StudentsIllustration className="lite-hide mx-auto -mb-8 mt-4 w-full max-w-[340px]" />
         <ul className="relative mt-2 grid grid-cols-3 gap-2 text-center text-[11px] text-white/70">
           {[{ i: "star", t: t("Score par bourse") }, { i: "file", t: t("CV et lettre") }, { i: "people", t: t("Conseiller dédié") }].map((x) => (
             <li key={x.t} className="flex flex-col items-center gap-1.5"><Icon name={x.i} className="h-4 w-4 text-[#3ee0a8]" />{x.t}</li>
@@ -101,7 +117,7 @@ export default function AuthPanel({ initialMode = "connexion", next, onClose, on
           </div>
           <h1 className="mt-7 text-[1.65rem] sm:text-3xl leading-tight">{isLogin ? <>{t("Ravis de vous")} <span className="accent">{t("revoir.")}</span></> : <>{t("Votre profil en")} <span className="accent">{t("cinq minutes.")}</span></>}</h1>
           <p className="mt-2 text-sm text-muted">
-            {isLogin ? <>{t("Retrouvez vos bourses et votre score. Démo :")} <span className="font-mono text-xs text-brand">{t("demo@example.org")}</span> / <span className="font-mono text-xs text-brand">{t("demo12345")}</span></> : t("Votre prénom, un e-mail et un mot de passe. Ensuite, votre profil sert uniquement à trouver vos bourses.")}
+            {isLogin ? <>{t("Retrouvez vos bourses et votre score.")}{SHOW_DEMO && <> {t("Démo :")} <span className="font-mono text-xs text-brand">{t("demo@example.org")}</span> / <span className="font-mono text-xs text-brand">{t("demo12345")}</span></>}</> : t("Votre prénom, un e-mail et un mot de passe. Ensuite, votre profil sert uniquement à trouver vos bourses.")}
           </p>
           <form onSubmit={submit} className="relative mt-6 space-y-5">
             {!isLogin && (
@@ -126,6 +142,7 @@ export default function AuthPanel({ initialMode = "connexion", next, onClose, on
                 <input id="password" name="password" type={show ? "text" : "password"} autoComplete={isLogin ? "current-password" : "new-password"} required minLength={isLogin ? 1 : 8} pattern={isLogin ? undefined : "(?=.*[A-Za-z])(?=.*\\d).{8,}"} title={isLogin ? undefined : t("8 caractères minimum, avec au moins une lettre et un chiffre")} className="input pr-10" placeholder={isLogin ? "••••••••" : t("8 caractères, une lettre et un chiffre")} value={password} onChange={(e) => setPassword(e.target.value)} />
                 <button type="button" onClick={() => setShow(!show)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-ink" aria-label={show ? t("Masquer le mot de passe") : t("Afficher le mot de passe")}><Icon name="eye" /></button>
               </div>
+              {isLogin && <p className="mt-1.5 text-right text-xs"><Link href="/mot-de-passe-oublie" onClick={() => onClose?.()} className="text-muted hover:text-brand hover:underline">{t("Mot de passe oublié ?")}</Link></p>}
             </div>
             {!isLogin && (
               <div className="-mt-2 space-y-2">
@@ -139,7 +156,7 @@ export default function AuthPanel({ initialMode = "connexion", next, onClose, on
             {!isLogin && (
               <label className="flex items-start gap-2 text-xs text-muted">
                 <input type="checkbox" className="mt-0.5 accent-[#3ee0a8]" checked={consent} onChange={(e) => setConsent(e.target.checked)} required />
-                {t("J'accepte que mes informations servent au matching et à la préparation de mes candidatures. Elles ne sont jamais vendues et je peux supprimer mon compte à tout moment.")}
+                <span>{t("J'accepte que mes informations servent au matching et à la préparation de mes candidatures. Elles ne sont jamais vendues et je peux supprimer mon compte à tout moment.")} <Link href="/confidentialite" target="_blank" className="font-semibold text-brand hover:underline">{t("Politique de confidentialité")}</Link></span>
               </label>
             )}
             {error && <p className="text-sm text-danger">{error}</p>}

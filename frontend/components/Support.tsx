@@ -71,7 +71,7 @@ export default function Support({ compact = false, asPage = false }: { compact?:
               <li key={x} className="flex gap-2"><Icon name="check" className="mt-0.5 h-4 w-4 shrink-0 text-brand" />{x}</li>
             ))}
           </ul>
-          <HeartArt className="mt-8 hidden w-44 lg:block" />
+          <HeartArt className="lite-hide mt-8 hidden w-44 lg:block" />
         </div>
 
         <div className="rounded-2xl border border-line bg-surface p-5">

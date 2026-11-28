@@ -2,7 +2,7 @@
 import re
 from datetime import date
 
-from tests.conftest import login
+from tests.conftest import register, login
 
 CV = """Awa Diop
 awa.diop@mail.com | +221 77 123 45 67 | Dakar
@@ -22,8 +22,7 @@ Français, anglais B2"""
 
 
 def _student(client, email):
-    r = client.post("/api/auth/register", json={"email": email, "password": "motdepasse1"})
-    h = {"Authorization": f"Bearer {r.json()['access_token']}"}
+    h = register(client, email)
     r = client.put("/api/profile", headers=h, json={
         "full_name": "Awa Diop", "phone": "+221 77 123 45 67", "city": "Dakar", "residence_country": "SN", "gender": "f",
         "nationalities": ["SN"], "birth_date": str(date(date.today().year - 24, 3, 4)), "current_level": "BAC3",
@@ -123,8 +122,7 @@ def test_english_letter_layout(client):
 
 
 def test_letter_requires_header_information(client):
-    r = client.post("/api/auth/register", json={"email": "vide@example.org", "password": "motdepasse1"})
-    h = {"Authorization": f"Bearer {r.json()['access_token']}"}
+    h = register(client, "vide@example.org")
     s = _first(client, "daad")
     ctx = client.get(f"/api/letters/{s['id']}/context", headers=h).json()
     assert {m["field"] for m in ctx["missing"]} >= {"full_name", "phone", "city", "cv"}

@@ -1,20 +1,22 @@
 "use client";
-// Filet de sécurité : si une page plante dans le navigateur, on affiche ce message
-// (avec l'en-tête et le menu du site) au lieu de l'écran noir « Application error ».
 import Link from "next/link";
 import { useEffect } from "react";
 import { useT } from "@/components/LangProvider";
+import { reportError } from "@/lib/report-error";
 
-export default function Error({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
+/** Erreur d'affichage d'une page : message clair au lieu d'un écran blanc, et remontée à l'équipe. */
+export default function PageError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   const { t } = useT();
-  useEffect(() => { console.error(error); }, [error]);
+  useEffect(() => reportError(error), [error]);
   return (
-    <div className="card mx-auto my-10 max-w-md p-8 text-center">
-      <p className="font-serif text-xl">{t("Un problème est survenu sur cette page.")}</p>
-      <p className="mt-2 text-sm text-muted">{t("Rechargez la page. Si le problème continue, revenez dans quelques minutes : vos données ne sont pas perdues.")}</p>
-      <div className="mt-5 flex flex-wrap justify-center gap-2">
-        <button className="btn-primary" onClick={() => reset()}>{t("Réessayer")}</button>
-        <Link href="/" className="btn-ghost">{t("Retour à l'accueil")}</Link>
+    <div className="mx-auto max-w-md py-12">
+      <div className="card p-8 text-center">
+        <h1 className="text-2xl">{t("Cette page n'a pas pu s'afficher")}</h1>
+        <p className="mt-2 text-sm text-muted">{t("L'équipe a été prévenue automatiquement. Vous pouvez réessayer ou revenir à l'accueil.")}</p>
+        <div className="mt-6 grid gap-2">
+          <button type="button" className="btn-primary" onClick={reset}>{t("Réessayer")}</button>
+          <Link href="/" className="btn-ghost">{t("← Retour à l'accueil")}</Link>
+        </div>
       </div>
     </div>
   );

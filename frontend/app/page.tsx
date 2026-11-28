@@ -2,7 +2,7 @@ import Link from "next/link";
 import Chat from "@/components/Chat";
 import { CountryCarousel, FlagMarquee, HeroGlobe, LiveStats } from "@/components/HomeLive";
 import Icon from "@/components/Icon";
-import Offers from "@/components/Offers";
+import AdvisorBanner from "@/components/AdvisorBanner";
 import Reveal from "@/components/Reveal";
 import { ChecklistArt } from "@/components/Illustrations";
 import { getT } from "@/lib/i18n-server";
@@ -104,13 +104,8 @@ export default async function Home() {
       </section>
 
       {/* Offres */}
-      <section id="offres" className="mx-auto max-w-6xl scroll-mt-20 px-4 py-16 sm:py-24 sm:px-6">
-        <Reveal>
-          <p className="eyebrow">{t("Postuler seul ou accompagné")}</p>
-          <h2 className="mt-3 max-w-2xl text-[1.9rem] leading-tight sm:text-4xl lg:text-5xl">{t("Vous choisissez")} <span className="accent">{t("comment vous avancez.")}</span></h2>
-          <p className="mt-4 max-w-xl text-muted">{t("Postuler vous-même est gratuit. Si vous souhaitez qu'un expert prépare et dépose votre candidature, deux formules d'accompagnement.")}</p>
-        </Reveal>
-        <Reveal delay={120} className="mt-12"><Offers /></Reveal>
+      <section id="offres" className="mx-auto max-w-6xl scroll-mt-20 px-4 py-12 sm:py-16 sm:px-6">
+        <Reveal><AdvisorBanner /></Reveal>
       </section>
 
       {/* Assistant */}
@@ -130,7 +125,7 @@ export default async function Home() {
         <Reveal>
           <p className="eyebrow">{t("Questions fréquentes")}</p>
           <h2 className="mt-3 text-3xl sm:text-4xl">{t("Avant de vous lancer.")}</h2>
-          <ChecklistArt className="mt-8 hidden w-56 lg:block" />
+          <ChecklistArt className="lite-hide mt-8 hidden w-56 lg:block" />
         </Reveal>
         <div className="space-y-3">
           {FAQ.map((f, i) => (

@@ -20,8 +20,16 @@ Ce dépôt est le **MVP** décrit dans le document de conception du projet. Il t
 | Lettre de motivation | `/lettre/ID` | En-tête complet tiré du profil (nom, adresse, ville, téléphone, e-mail) et du CV. Réponses facultatives : programme visé, pourquoi ce pays, pourquoi ce programme, plan d'études, projet après les études, réalisation marquante. Disposition française (destinataire à droite, « Lomé, le … », objet, formule de politesse) ou anglophone (britannique ou américaine). Contrôle avant affichage : pas de deux-points dans le corps, pas de tiret cadratin, pas de phrase incomplète, pas de crochets, pas de formule stéréotypée (réécriture automatique si besoin). Aperçu modifiable, téléchargement **PDF** et **Word**. |
 | Préparer ma candidature | `/preparer/ID` | **Compatibilité avant de postuler** : conditions d'accès, pièces du dossier, thèmes valorisés par le jury couverts ou non par le CV, score, verdict et améliorations classées par priorité. |
 | Dossiers CV + lettre | `/cv`, `/lettre/ID`, `/admin` | Un dossier = CV adapté + lettre pour une bourse, 3 générations de chaque. **Le premier est offert, ensuite abonnement à 2 500 F CFA par mois** (`SUBSCRIPTION_PRICE`) pour préparer jusqu'à 10 dossiers par mois (`SUBSCRIPTION_MONTHLY_PACKS`, limite qui maîtrise le coût de l'IA). Paiement Flooz, Mixx by Yas, TapTap Send, LemFi ou PI-SPI vers les numéros affichés ; l'étudiant déclare la référence, l'admin valide dans `/admin` et l'abonnement démarre pour 30 jours (ou est prolongé d'un mois). Le diagnostic et les modifications manuelles restent gratuits. |
-| Alertes | `/mes-bourses` + console | Nouvelles bourses correspondant au profil, rappels J-30, J-7 et J-1 pour les candidatures pas encore envoyées. |
-| Administration | `/admin` | Lancer une source de collecte, tester l'extraction d'une URL, valider les bourses « à vérifier », saisie manuelle, maintenance (expirations et alertes). |
+| Alertes par e-mail | `/mes-bourses` + e-mail | Nouvelles bourses correspondant au profil, nouvelles offres des **recherches sauvegardées**, rappels J-30, J-7 et J-1 pour les candidatures pas encore envoyées, messages et rendez-vous d'accompagnement. **Un seul e-mail par personne et par passage** (toutes les `AUTO_COLLECT_HOURS` heures) qui regroupe ses alertes, avec un lien de désabonnement (`/desabonner`, en-tête `List-Unsubscribe`). Pas d'e-mail si l'adresse n'est pas confirmée ou si les alertes sont refusées dans le profil. Sans `SMTP_HOST`, l'e-mail est écrit dans la console de l'API. |
+| Recherches sauvegardées | `/bourses`, `/mes-bourses` | Dans Explorer, « M'alerter des nouvelles offres » enregistre les filtres affichés (20 recherches au plus). Chaque nouvelle fiche qui y répond crée une alerte. Liste, activation des alertes et suppression dans « Mes bourses ». |
+| Signalements | fiche, `/admin` | « Signaler une erreur » sur chaque fiche (lien mort, date fausse, informations erronées, offre disparue, autre), réservé aux comptes, un signalement ouvert par personne et par fiche. Trois signalements « lien mort » de personnes différentes marquent le lien comme cassé. Dans l'administration : liste, « Corrigé » (prévient les personnes qui ont signalé) ou « Rejeter ». |
+| Agenda et partage | fiche, `/suivi` | Date limite d'une fiche en fichier `.ics` (rappels 7 jours et 1 jour avant), toutes les dates limites du suivi en un fichier. Partage sur WhatsApp et partage natif du téléphone. Aperçu du lien soigné (titre, résumé, image générée `opengraph-image`) : définir `NEXT_PUBLIC_SITE_URL`. |
+| Application installable et hors ligne | tout le site | Manifeste (`/manifest.webmanifest`, icônes dans `public/icons/`) et service worker (`public/sw.js`, actif après `npm run build`) : fichiers du site gardés, pages et données de « Mes bourses », du suivi et des fiches suivies lisibles sans réseau, page `/hors-ligne` sinon, bandeau « Hors connexion ». Rien de personnel n'est gardé après la déconnexion. |
+| Mode léger | tout le site | Sans globe animé, illustrations ni animations. Activé tout seul si le téléphone signale une connexion lente (2G, 3G) ou l'économiseur de données, annoncé par une notification (« Garder le mode léger » ou « Tout afficher », choix retenu) ; lien en pied de page pour changer d'avis. |
+| Administration | `/admin` | Lancer une source de collecte, tester l'extraction d'une URL, valider les bourses « à vérifier », saisie manuelle, maintenance (expirations et alertes), fiches signalées, **coût de l'IA** (par jour et par fonction) et **journal d'audit**. |
+| Types d'opportunités | `/admin` | Interrupteur par type (bourses, stages, conférences, formations, concours, échanges, fellowships, cours en ligne), avec le nombre d'offres ouvertes et en base. Un type désactivé reste en base mais disparaît des onglets, de la recherche, des fiches, du matching, du questionnaire, des alertes et des statistiques, et n'est plus collecté (catégories et zones de découverte sautées : aucun coût d'IA). Par défaut, tous sont affichés. Réglage gardé en base (`site_settings`), changement inscrit au journal d'audit. |
+| Journal d'audit | `/admin` | Toute modification réussie sous `/api/admin` est inscrite automatiquement (auteur, action, cible, détails comme le titre d'une fiche supprimée ou le statut d'un paiement, adresse IP), ainsi que les connexions des administrateurs, les changements et réinitialisations de mot de passe et les suppressions de compte. |
+| Supervision | API et site | Suivi des erreurs par Sentry (ou compatible, GlitchTip) si `SENTRY_DSN` est défini, sans donnée personnelle. Les erreurs d'affichage du site (`app/error.tsx`, `app/global-error.tsx`) remontent à l'API (`POST /api/erreurs-site`). Chaque appel à Claude enregistre ses jetons et son coût estimé (`ai_costs`, prix `AI_PRICE_*`) ; `AI_DAILY_BUDGET_USD` coupe l'IA pour la journée au-delà d'un plafond (les règles hors-ligne prennent le relais). |
 
 ### Avec ou sans IA
 
@@ -103,7 +111,7 @@ Ces comptes n'existent qu'en local : en ligne (`APP_ENV=production` ou base Post
 
 Quand l'API est lancée, elle regarde **une fois par jour** (`AUTO_COLLECT_HOURS=24`, `app/scheduler.py`) quelles sources sont dues, chacune selon sa fréquence (**une fois par semaine**, 168 h, pour les sites et l'IA, afin de limiter le nombre de requêtes). Les alertes, rappels et expirations restent quotidiens. Les nouvelles fiches apparaissent sur le site dès qu'elles sont en base :
 
-1. **Sources déclarées** dans `backend/app/data/sources.json` dont la fréquence est écoulée, dont **12 sites d'annonces** : Afri-Carrières, Opportunities For Africans, Opportunity Desk, Scholars4Dev, After School Africa, Opportunities Circle, Youth Opportunities, Scholarship Positions, World Scholarship Forum, Scholarships Ads, Scholarship Roar, Study Abroad Nations (connecteur `site`). Les 3 premières pages du flux RSS sont lues (sinon les annonces de la page d'accueil), jusqu'à 60 annonces nouvelles par site et par passage ; une annonce déjà lue n'est pas relue ; les offres d'emploi sont écartées ; le lien gardé est celui du **site officiel** cité dans l'annonce (la page de l'agrégateur reste dans `source_page`) ;
+1. **Sources déclarées** dans `backend/app/data/sources.json` dont la fréquence est écoulée, dont **13 sites d'annonces** : Afri-Carrières, Opportunities For Africans, Opportunity Desk, Scholars4Dev, After School Africa, Opportunities Circle, Youth Opportunities, Scholarship Positions, World Scholarship Forum, Scholarships Ads, Scholarship Roar, Study Abroad Nations, Opportunities Corners (connecteur `site`), plus Conference Index et l'annuaire **Campus Bourses** de Campus France (connecteur `campusbourses` : lecture de son API JSON ouverte, programmes annuels pour étudier en France, marqués récurrents). EURAXESS est désactivée : plus de flux RSS, et le site bloque les robots. **Huit types d'opportunités** sont collectés : bourses, stages, conférences, formations, concours, programmes d'échange (écoles d'été, camps), fellowships et cours en ligne (`vocab.KINDS`). Un site peut être lu **par catégorie** (`feeds` : `{"url", "kind"}`) : le type donné par la catégorie prime, et `exclude_pattern` écarte guides, conseils de visa et emplois avant toute lecture. Activer ou désactiver une source dans `sources.json` s'applique aussi à une base existante. Les 3 premières pages du flux RSS sont lues (sinon les annonces de la page d'accueil), jusqu'à 60 annonces nouvelles par site et par passage ; une annonce déjà lue n'est pas relue ; les offres d'emploi sont écartées ; le lien gardé est celui du **site officiel** cité dans l'annonce (la page de l'agrégateur reste dans `source_page`) ;
 2. **Stages des organisations internationales** via l'API ReliefWeb (ONU OCHA, connecteur `reliefweb`) : tous les stages publiés par les agences de l'ONU, les ONG et les organisations internationales, avec le pays du stage et la date de clôture. Il faut un nom d'application gratuit, à demander sur https://apidoc.reliefweb.int, à mettre dans `RELIEFWEB_APPNAME` ;
 3. **Découverte par l'IA** (`app/scrapers/discovery.py`) : Claude cherche sur le web une fois par semaine, sur les **46 zones** en un seul passage : les régions du monde (Afrique en 5 zones, Europe en 6, Amériques, Moyen-Orient, Asie, Océanie, programmes internationaux), des pays d'études africains (Ghana, Nigeria, Sénégal, Côte d'Ivoire, Togo, Bénin, Maroc, Égypte, Rwanda, Kenya), les publics (femmes, réfugiés, revenus modestes), les domaines (informatique, santé, agriculture et climat, ingénierie et sciences, droit et économie, arts et journalisme), les niveaux (licence, doctorat et post-doc, écoles d'été), 10 zones de stages (ONU et agences, Banque mondiale, FMI, BAD, BCEAO, Union africaine, CEDEAO, OIF, institutions européennes, ONG, entreprises par continent) et les conférences. Le monde entier est parcouru à chaque passage hebdomadaire. Chaque lien est testé avant enregistrement (un lien mort n'entre pas en base). Les fiches réservées à un public (par exemple les femmes) sont marquées comme telles ;
 4. **Dates limites** : une bourse annuelle dont la date vient de passer est signalée « session close » avec la session suivante estimée ; une bourse ponctuelle passe en « expirée » ;
@@ -111,6 +119,14 @@ Quand l'API est lancée, elle regarde **une fois par jour** (`AUTO_COLLECT_HOURS
 6. **Alertes** (nouvelles bourses pour le profil, rappels J-30, J-7, J-1) et rappels d'accompagnement.
 
 La découverte IA a besoin de `ANTHROPIC_API_KEY` dans `backend/.env` ; sans clé, le reste tourne quand même. Pour ne pas laisser l'API faire la collecte, mets `AUTO_COLLECT_HOURS=0` et planifie `python -m app.cli nightly` (cron, ou Planificateur de tâches sous Windows).
+
+### Coût de l'IA pendant la collecte
+
+- **Pages déjà lues** (`seen_pages`) : chaque annonce est mémorisée avec l'empreinte de son texte, qu'elle ait donné une fiche ou non (offre d'emploi…). Une annonce relayée n'est plus jamais retéléchargée ; une page de liste n'est relue par l'IA que si son texte a changé.
+- **Traitement par lots** (`app/ai/batch.py`, Message Batches API, **moitié prix**) : l'extraction des annonces, la mise en forme des recherches de la découverte et les traductions sont mises en file pendant le passage, envoyées en un lot à la fin, et appliquées au passage suivant (la plupart des lots finissent en moins d'une heure, 24 h au plus). Un travail échoué retombe sur l'extraction par règles. `AI_USE_BATCH=false` pour revenir aux appels immédiats. La recherche web elle-même reste immédiate (un lot ne peut pas enchaîner des recherches).
+- **Extraction en deux temps** (idée reprise d'Opportia, `app/scrapers/extract.py`) : un premier passage par un modèle économique (`EXTRACT_MODEL`, Claude Haiku 5.5 par défaut) produit la fiche avec, pour la date limite, les conditions et le financement, une **preuve** recopiée mot pour mot de la page. Un contrôle sans IA vérifie que chaque preuve se trouve bien dans la page, que la date limite n'est pas oubliée alors que la page en parle, et que le niveau d'études est indiqué. Seules les fiches douteuses partent en **relecture** chez le modèle principal (`REVIEW_MODEL`, sinon `CLAUDE_MODEL`), qui ne renvoie que les champs à corriger. Avec `EXTRACT_PROVIDER=ollama`, le premier passage se fait sur une machine à vous (Ollama, `OLLAMA_URL`, `OLLAMA_MODEL`), gratuitement ; la relecture ciblée reste chez Claude. Les fiches restent « à vérifier » par l'administration.
+- **Réponses réutilisées** (`ai_cache`, `AI_CACHE_DAYS`, 30 jours) : diagnostic de CV, conseils de compatibilité et lecture des messages du chat ; une demande identique reprend la réponse gardée. Les CV adaptés et les lettres ne sont pas concernés (régénérer doit donner une nouvelle version).
+- Le tableau « Coût de l'IA » de l'administration montre aussi les travaux en file, envoyés, faits et échoués.
 
 ### Commandes
 
@@ -136,7 +152,7 @@ python -m app.cli extract https://exemple.org/une-bourse   # teste l'extraction 
 | `rss` | Flux RSS ou Atom dont chaque entrée pointe vers une bourse | `url`, `limit` |
 | `page_list` | Page « liste de bourses » + liens vers les fiches | `url`, `link_selector` (CSS), `link_pattern` (regex), `limit` |
 
-Règles de collecte (`app/scrapers/base.py`) : lecture de `robots.txt`, une requête toutes les 5 secondes par domaine, User-Agent identifiable, cache de 24 h, seuls les faits sont stockés (l'IA reformule, rien n'est recopié), aucune donnée personnelle. Les sources Campus France et EURAXESS sont fournies **désactivées** : lis leurs conditions d'utilisation avant de les activer.
+Règles de collecte (`app/scrapers/base.py`) : lecture de `robots.txt`, une requête toutes les 5 secondes par domaine, User-Agent identifiable, cache de 24 h, seuls les faits sont stockés (l'IA reformule, rien n'est recopié), aucune donnée personnelle. Avant d'activer une nouvelle source, lis ses conditions d'utilisation ; EURAXESS reste désactivée (blocage des robots).
 
 > **Données de départ** : 82 bourses, 10 stages (ONU, Banque mondiale, FMI, Commission et Parlement européens, BAD, Union africaine, UNICEF, OMS, Volontariat de la Francophonie) et 6 conférences (Deep Learning Indaba, Data Science Africa, One Young World, Forum jeunesse de l'ECOSOC, Women Deliver, YouthConnekt Africa). Bourses : 82 vrais programmes sur tous les continents (Eiffel, DAAD, Chevening, MEXT, Swedish Institute, Knight-Hennessy, KAUST, Manaaki, Université panafricaine, AIMS, AMCI…), avec 55 pays d'études. **Montants, dates limites et critères sont indicatifs** (les dates sont marquées « estimées ») et doivent être vérifiés sur chaque page officielle. Une base déjà créée reçoit les nouvelles colonnes au démarrage ; relance `python -m app.cli seed` pour charger les nouvelles bourses.
 
@@ -223,6 +239,19 @@ docker-compose.yml            PostgreSQL + API + site
 ## Tests
 
 ```bash
+<<<<<<< HEAD
+cd backend && python -m pytest -q        # 90 tests, sans réseau ni clé API (dont sécurité, alertes, signalements, audit, agenda, coûts IA)
+cd frontend && npm run typecheck && npm run build
+```
+
+**Test de bout en bout**, contre une plateforme qui tourne déjà (passe par le site, comme un visiteur : catalogue, aperçu des liens, application installable, inscription, sécurité, profil, suivi, agenda, recherches, signalement, export, mot de passe, administration, suppression du compte de test) :
+
+```bash
+python scripts/e2e_smoke.py --base http://localhost:3000 --admin admin@example.org:admin12345
+```
+
+Pour tester le service worker sans arrêter `npm run dev` : `NEXT_DIST_DIR=.next-prod npm run build` puis `NEXT_DIST_DIR=.next-prod npx next start -p 3200`.
+=======
 cd backend && python -m pytest -q        # 72 tests : paiement en ligne, e-mails et rappels, pages pays, documents d'accompagnement, API, comptes (démo, e-mail, mot de passe oublié), matching, chat, CV, lettres, admin, accompagnement, monde entier, dates limites, questionnaire, offres, liens, stages et conférences, agrégateurs, IA simulée
 cd frontend && npm run typecheck && npm run build
 ```
@@ -243,6 +272,7 @@ npx playwright test                       # E2E_BASE_URL=https://www.votre-domai
 - **Référencement** : `/destinations` (pays par continent), `/destinations/france`, `/destinations/france/bourses|stages|conferences`, avec titre, description, adresse canonique et données structurées ; `sitemap.xml` et `robots.txt`.
 - **Pages légales** : `/a-propos`, `/conditions`, `/confidentialite` (FR et EN), liées dans le pied de page. Identité de l'éditeur dans les variables `NEXT_PUBLIC_COMPANY_*` et `NEXT_PUBLIC_CONTACT_*`.
 - **Mise en ligne** : `python -m app.cli check-config` liste ce qui manque ; `python -m app.cli backup` exporte toute la base. Voir DEPLOIEMENT.md partie 8.
+>>>>>>> origin/main
 
 ## Variables d'environnement
 
@@ -252,12 +282,19 @@ Site (`frontend/.env.local`) : `API_URL_INTERNAL` (adresse de l'API pour le serv
 
 ## Ce qui reste à faire (suite du plan)
 
+<<<<<<< HEAD
+- **Paiement en ligne** : brancher un agrégateur Mobile Money (CinetPay, PayDunya, Wave, Orange Money) sur `POST /api/accompagnement`.
+- **Alertes WhatsApp ou Telegram** : un second canal dans `send_alert_emails` (`app/alerts.py`), à côté de l'e-mail.
+- **Connecteurs réels** : vérifier robots.txt et conditions de chaque source, ajuster les sélecteurs, demander des partenariats.
+- **Recherche sémantique** : remplacer la similarité par mots-clés par des embeddings stockés dans PostgreSQL avec pgvector.
+=======
 - **Paiement en ligne** : ouvrir le compte marchand CinetPay et faire un premier paiement réel (voir DEPLOIEMENT.md 8.3).
 - **Alertes WhatsApp** : en plus des e-mails, via l'API WhatsApp Business.
 - **Connecteurs réels** : vérifier robots.txt et conditions de chaque source, ajuster les sélecteurs, demander des partenariats.
 - **Recherche sémantique** : remplacer la similarité par mots-clés par des embeddings stockés dans PostgreSQL avec pgvector.
 - **Migrations de base** : les colonnes et index nouveaux sont ajoutés au démarrage ; passer à Alembic si le schéma doit un jour renommer ou supprimer des colonnes.
 - **Vérification des fiches** : les 133 fiches de départ restent « à vérifier » (dates estimées d'après la session précédente) tant qu'un administrateur ne les a pas confirmées dans /admin (voir DEPLOIEMENT.md, « Entretien du site »).
+>>>>>>> origin/main
 - **Stockage des fichiers** : les CV sont stockés en texte dans la base ; pour garder les fichiers d'origine, ajouter un stockage S3 privé et chiffré.
 - **Accompagnement** : envoyer les messages et rappels par e-mail ou WhatsApp, synchroniser les rendez-vous avec un agenda (fichier .ics, Google Agenda), joindre des fichiers aux messages, formules payantes si le modèle économique le prévoit, et un coach IA qui prépare les relectures pour le conseiller.
 - **Base existante** : les nouvelles tables (`advisors`, `coachings`, `coaching_steps`, `coaching_messages`, `coaching_meetings`) sont créées au démarrage ; aucune table existante ne change, donc une base du MVP précédent continue de fonctionner (relance `python -m app.cli seed` pour y ajouter le compte conseiller de démo).

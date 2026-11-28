@@ -46,14 +46,21 @@ def run_cycle() -> dict:
     from .scrapers.collector import expire_old, run_all
     from .translate import translate_missing
 
+    from .ai.batch import collect_results, submit_pending
+
     db = SessionLocal()
     try:
-        report = {"sources": run_all(db, only_due=True)}
+        report = {"lots_recus": collect_results(db)}  # réponses des lots envoyés au passage précédent
+        report["sources"] = run_all(db, only_due=True)
         report["expirees"] = expire_old(db)
         report["liens"] = check_links(db)
         report["traductions"] = translate_missing(db, limit=100)
+        report["lots_envoyes"] = submit_pending(db)  # extraction, mise en forme et traduction : moitié prix
         report["alertes"] = run_alerts(db)
         report["rappels"] = run_reminders(db)
+        from .alerts import send_alert_emails
+
+        report["emails"] = send_alert_emails(db)
         report["paiements"] = reconcile(db)
         return report
     finally:

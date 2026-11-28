@@ -77,7 +77,8 @@ LEVELS_EN = {
     "BAC5": "Master's degree",
     "BAC7": "PhD and postdoc",
 }
-KINDS_EN = {"bourse": "Scholarship", "stage": "Internship", "conference": "Conference"}
+KINDS_EN = {"bourse": "Scholarship", "stage": "Internship", "conference": "Conference", "formation": "Training",
+            "concours": "Competition", "echange": "Exchange programme", "fellowship": "Fellowship", "cours_en_ligne": "Online course"}
 DOMAINS_EN = {
     "agriculture": "Agriculture and agronomy",
     "arts": "Arts, design and architecture",

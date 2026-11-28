@@ -4,13 +4,11 @@ from datetime import date, timedelta
 
 from sqlalchemy import select
 
-from tests.conftest import login
+from tests.conftest import login, register
 
 
 def _register(client, email):
-    r = client.post("/api/auth/register", json={"email": email, "password": "motdepasse1"})
-    assert r.status_code == 201, r.text
-    return {"Authorization": f"Bearer {r.json()['access_token']}"}
+    return register(client, email)
 
 
 def _db():
@@ -228,7 +226,8 @@ def test_broken_links_hidden_from_public(client):
 
     db = _db()
     try:
-        s = db.scalars(select(Scholarship).where(Scholarship.deadline >= date.today())).first()
+        s = db.scalars(select(Scholarship).where(Scholarship.deadline >= date.today(), Scholarship.review == "publie",
+                                                 Scholarship.link_status != "casse", Scholarship.kind == "bourse")).first()
         before = client.get("/api/scholarships", params={"q": s.title, "per_page": 100, "kind": s.kind}).json()["total"]
         s.link_status = "casse"
         db.commit()
@@ -269,3 +268,17 @@ def test_coaching_files(client):
         a = _login(client, "conseiller@example.org", "conseil12345")
         client.post(f"/api/accompagnement/{c['id']}/annuler", headers=h)
         assert a
+
+
+def test_coaching_files_checked_by_content_and_large_ones_allowed(client):
+    """Le type annoncé doit correspondre au contenu ; un document de quelques Mo passe le garde-fou de taille."""
+    h = _register(client, "pieces-controle@example.org")
+    body = {"goal": "Master en France", "needs": ["cv"], "application_ids": [], "share_consent": True, "offer": "standard"}
+    c = client.post("/api/accompagnement", headers=h, json=body).json()
+    url = f"/api/accompagnement/{c['id']}/fichiers"
+    fake = client.post(url, headers=h, files={"file": ("releves.pdf", b"<html>pas un pdf</html>", "application/pdf")},
+                       data={"category": "piece"})
+    assert fake.status_code == 415
+    big = b"%PDF-1.4\n" + b"0" * (3 * 1024 * 1024)
+    r = client.post(url, headers=h, files={"file": ("diplome.pdf", big, "application/pdf")}, data={"category": "piece"})
+    assert r.status_code == 201, r.text

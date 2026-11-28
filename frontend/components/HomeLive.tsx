@@ -8,6 +8,7 @@ import Icon from "./Icon";
 import CountUp from "./CountUp";
 import { useT } from "./LangProvider";
 import WorldGlobe from "./WorldGlobe";
+import { useLite } from "./AppRuntime";
 import { countryName } from "@/lib/i18n";
 
 function useCountryStats() {
@@ -19,7 +20,25 @@ function useCountryStats() {
 
 export function HeroGlobe() {
   const { rows } = useCountryStats();
-  const { lang } = useT();
+  const { lang, t } = useT();
+  const lite = useLite();
+  if (lite) {
+    const top = [...(rows ?? [])].sort((a, b) => b.count - a.count).slice(0, 12);
+    return (
+      <div className="card p-5">
+        <p className="text-sm font-semibold">{t("Pays d'études les plus représentés")}</p>
+        <ul className="mt-3 grid grid-cols-2 gap-2 text-sm">
+          {top.map((r) => (
+            <li key={r.code}>
+              <Link href={`/bourses?country=${r.code}&country_exact=true&kind=bourse`} className="flex items-center justify-between gap-2 rounded-lg px-2 py-1 hover:bg-surface">
+                <span className="truncate">{countryName(r.code, lang, r.name)}</span><span className="tabular-nums text-muted">{r.count}</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  }
   return (
     <div className="relative aspect-square w-full">
       <WorldGlobe markers={(rows ?? []).map((r) => ({ code: r.code, name: countryName(r.code, lang, r.name), count: r.count }))} />
@@ -117,7 +136,7 @@ export function LiveStats() {
   const v = (n: number | undefined) => (s ? <CountUp value={n ?? 0} /> : "…");
   const items = [
     { value: v(s?.by_kind?.bourse ?? s?.open), label: t("bourses ouvertes") },
-    { value: v((s?.by_kind?.stage ?? 0) + (s?.by_kind?.conference ?? 0)), label: t("stages et conférences") },
+    { value: v(Object.entries(s?.by_kind ?? {}).filter(([k]) => k !== "bourse").reduce((n, [, c]) => n + (c ?? 0), 0)), label: t("stages, formations, concours et autres") },
     { value: v(s?.closing_soon), label: t("ferment dans moins de 45 jours") },
     { value: v(s?.countries), label: t("pays") },
   ];

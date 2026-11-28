@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { API_URL, Scholarship, api, getToken } from "@/lib/api";
+import { API_URL, CREDENTIALS, Scholarship, api, apiHeaders } from "@/lib/api";
 
 type Item = Scholarship & { review?: string; source_name?: string | null; source_page?: string | null };
 
@@ -24,7 +24,7 @@ export default function AdminReview() {
     setBusy(true);
     setMsg(null);
     try {
-      const res = await fetch(`${API_URL}/api/admin/sauvegarde`, { headers: { Authorization: `Bearer ${getToken() ?? ""}` } });
+      const res = await fetch(`${API_URL}/api/admin/sauvegarde`, { headers: apiHeaders(), credentials: CREDENTIALS });
       if (!res.ok) throw new Error(`Erreur ${res.status}`);
       const blob = await res.blob();
       const name = /filename="([^"]+)"/.exec(res.headers.get("content-disposition") || "")?.[1] || "scholarfit-sauvegarde.json.gz";

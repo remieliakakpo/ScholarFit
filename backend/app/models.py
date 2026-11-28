@@ -2,7 +2,7 @@
 ce qui fonctionne aussi bien avec SQLite qu'avec PostgreSQL."""
 from datetime import date, datetime, timezone
 
-from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, JSON, LargeBinary, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -30,11 +30,13 @@ class Source(Base):
 
 class Scholarship(Base):
     __tablename__ = "scholarships"
+    # Recherche la plus fréquente : types affichés et fiches publiées
+    __table_args__ = (Index("ix_scholarships_kind_review", "kind", "review"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     slug: Mapped[str] = mapped_column(String(200), unique=True, index=True)
     title: Mapped[str] = mapped_column(String(300))
-    # Type d'opportunité : bourse | stage | conference (même fiche, même matching)
+    # Type d'opportunité : voir vocab.KINDS (bourse, stage, conference, formation, concours, echange, fellowship, cours_en_ligne)
     kind: Mapped[str] = mapped_column(String(20), default="bourse", index=True)
     organization: Mapped[str] = mapped_column(String(300))
     official_url: Mapped[str] = mapped_column(String(500))
@@ -53,7 +55,7 @@ class Scholarship(Base):
     coverage: Mapped[list] = mapped_column(JSON, default=list)  # frais, logement, voyage, allocation, assurance
     full_funding: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    deadline: Mapped[date | None] = mapped_column(Date, nullable=True)
+    deadline: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
     recurring: Mapped[bool] = mapped_column(Boolean, default=True)
     max_age: Mapped[int | None] = mapped_column(Integer, nullable=True)
     min_grade: Mapped[float | None] = mapped_column(Float, nullable=True)  # sur 20
@@ -89,7 +91,7 @@ class Scholarship(Base):
     previous_deadline: Mapped[date | None] = mapped_column(Date, nullable=True)
     deadline_estimated: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    status: Mapped[str] = mapped_column(String(20), default="active")  # active | expiree | a_verifier
+    status: Mapped[str] = mapped_column(String(20), default="active", index=True)  # active | expiree | a_verifier
     source_id: Mapped[int | None] = mapped_column(ForeignKey("sources.id"), nullable=True)
     source_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     collected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -117,10 +119,21 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(300))
     # Prénom ou nom d'utilisateur demandé à l'inscription (« Salut, Awa »). Vide pour les anciens comptes.
     name: Mapped[str] = mapped_column(String(80), default="")
-    email_verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Sécurité du compte
+    email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Augmenté à chaque changement de mot de passe : les sessions et liens émis avant deviennent invalides.
+    token_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # Date d'acceptation des conditions et de la politique de confidentialité (inscription)
+    terms_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     lang: Mapped[str] = mapped_column(String(2), default="fr")  # langue choisie sur le site (alertes, e-mails)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # Sécurité du compte
+    email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Augmenté à chaque changement de mot de passe : les sessions et liens émis avant deviennent invalides.
+    token_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # Date d'acceptation des conditions et de la politique de confidentialité (inscription)
+    terms_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     profile: Mapped["Profile"] = relationship(back_populates="user", uselist=False, cascade="all, delete-orphan")
     applications: Mapped[list["Application"]] = relationship(back_populates="user", cascade="all, delete-orphan")
@@ -130,10 +143,35 @@ class User(Base):
     coachings: Mapped[list["Coaching"]] = relationship(back_populates="student", cascade="all, delete-orphan")
     doc_packs: Mapped[list["DocPack"]] = relationship(cascade="all, delete-orphan")
     credit_orders: Mapped[list["CreditOrder"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    saved_searches: Mapped[list["SavedSearch"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+
+    @property
+    def email_verified(self) -> bool:
+        return self.email_verified_at is not None
 
     @property
     def is_advisor(self) -> bool:
         return self.advisor is not None and self.advisor.active
+
+    @property
+    def email_verified(self) -> bool:
+        return self.email_verified_at is not None
+
+    @email_verified.setter
+    def email_verified(self, value: bool) -> None:
+        if value and self.email_verified_at is None:
+            self.email_verified_at = utcnow()
+        elif not value:
+            self.email_verified_at = None
+
+    @property
+    def home(self) -> str:
+        """Tableau de bord selon le rôle : administration, espace conseiller ou « Mes bourses »."""
+        if self.is_admin:
+            return "/admin"
+        if self.is_advisor:
+            return "/conseiller"
+        return "/mes-bourses"
 
     @property
     def display_name(self) -> str:
@@ -186,6 +224,16 @@ class Profile(Base):
 
     # Facultatif (sensible) : débloque des bourses ciblées
     situations: Mapped[list] = mapped_column(JSON, default=list)  # refugie, handicap, revenus_modestes, premiere_generation, femmes
+    # Consentement explicite à l'utilisation de ces données sensibles (obligatoire pour les enregistrer)
+    sensitive_consent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    def sync_sensitive_consent(self) -> None:
+        """Cocher une de ces situations, sous le texte qui explique leur usage, vaut consentement :
+        on en garde la date. Tout décocher retire le consentement."""
+        if self.situations and self.sensitive_consent_at is None:
+            self.sensitive_consent_at = utcnow()
+        elif not self.situations:
+            self.sensitive_consent_at = None
 
     cv_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     # En-tête des CV et lettres
@@ -250,6 +298,8 @@ class Alert(Base):
     scholarship_id: Mapped[int | None] = mapped_column(ForeignKey("scholarships.id"), nullable=True)
     read: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # Envoi par e-mail (regroupé par personne, app/alerts.py) ; vide = pas encore envoyée
+    emailed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     user: Mapped[User] = relationship(back_populates="alerts")
 
@@ -425,8 +475,136 @@ class CreditOrder(Base):
     status: Mapped[str] = mapped_column(String(20), default="en_verification")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Preuve de paiement (capture du reçu), rangée hors du site public : voir app/proofs.py
+    proof_path: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    proof_uploaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     user: Mapped[User] = relationship(back_populates="credit_orders")
+
+
+class ScholarshipReport(Base):
+    """Signalement d'une fiche par un membre : lien mort, date fausse, informations erronées…"""
+
+    __tablename__ = "scholarship_reports"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    scholarship_id: Mapped[int] = mapped_column(ForeignKey("scholarships.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    reason: Mapped[str] = mapped_column(String(30))  # lien_mort | date_fausse | infos_fausses | plus_disponible | autre
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="ouvert", index=True)  # ouvert | corrige | rejete
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolved_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    resolution_note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    scholarship: Mapped[Scholarship] = relationship()
+
+
+class AuditLog(Base):
+    """Journal des actions sensibles : administration (toute modification sous /api/admin) et
+    sécurité des comptes. L'adresse de l'auteur est recopiée : elle reste lisible si le compte
+    est supprimé."""
+
+    __tablename__ = "audit_logs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    actor_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    actor_email: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    action: Mapped[str] = mapped_column(String(120), index=True)
+    target_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    target_id: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    details: Mapped[dict] = mapped_column(JSON, default=dict)
+    ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    status_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+class SavedSearch(Base):
+    """Recherche du catalogue enregistrée par un membre, avec alerte sur les nouvelles fiches."""
+
+    __tablename__ = "saved_searches"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    filters: Mapped[dict] = mapped_column(JSON, default=dict)  # mêmes clés que GET /api/scholarships
+    alerts_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    user: Mapped[User] = relationship(back_populates="saved_searches")
+
+
+class AICost(Base):
+    """Une ligne par appel à l'API Claude : jetons consommés et coût estimé (app/ai/client.py)."""
+
+    __tablename__ = "ai_costs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    day: Mapped[date] = mapped_column(Date, index=True)
+    model: Mapped[str] = mapped_column(String(80))
+    purpose: Mapped[str] = mapped_column(String(40), default="autre")
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cache_read_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cache_write_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    web_searches: Mapped[int] = mapped_column(Integer, default=0)
+    cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class SeenPage(Base):
+    """Page d'annonce déjà lue par la collecte, avec l'empreinte de son texte : on ne repaie
+    l'IA que si la page a changé. Gardée même quand l'annonce a été écartée (offre d'emploi…)."""
+
+    __tablename__ = "seen_pages"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    url: Mapped[str] = mapped_column(String(500), unique=True, index=True)
+    content_hash: Mapped[str] = mapped_column(String(64))
+    outcome: Mapped[str] = mapped_column(String(20), default="fiche")  # fiche | ecartee | en_attente
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class AIJob(Base):
+    """Travail d'IA sans personne qui attend la réponse (extraction, mise en forme, traduction),
+    envoyé par lots à l'API (Batch API : moitié prix). Voir app/ai/batch.py."""
+
+    __tablename__ = "ai_jobs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(20), index=True)  # extract | structure | translate
+    status: Mapped[str] = mapped_column(String(20), default="en_attente", index=True)  # en_attente | envoye | fait | echec
+    user_text: Mapped[str] = mapped_column(Text)
+    context: Mapped[dict] = mapped_column(JSON, default=dict)  # ce qu'il faut pour traiter la réponse
+    batch_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class AICache(Base):
+    """Réponse de l'IA réutilisée quand exactement la même demande revient (même CV, même bourse…)."""
+
+    __tablename__ = "ai_cache"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    value: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class SiteSetting(Base):
+    """Réglage du site modifiable depuis l'administration (ex. « kinds_enabled » : types d'offres affichés)."""
+
+    __tablename__ = "site_settings"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(String(60), unique=True, index=True)
+    value: Mapped[dict] = mapped_column(JSON, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class Payment(Base):
@@ -496,10 +674,3 @@ class CoachingFile(Base):
     note: Mapped[str | None] = mapped_column(String(300), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
-
-class AppSetting(Base):
-    """Réglages gardés en base (ex. clé de signature générée quand SECRET_KEY n'est pas fournie)."""
-    __tablename__ = "app_settings"
-
-    key: Mapped[str] = mapped_column(String(60), primary_key=True)
-    value: Mapped[str] = mapped_column(Text)

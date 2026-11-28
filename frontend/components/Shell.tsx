@@ -2,8 +2,9 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { setToken } from "@/lib/api";
+import { api, signOut } from "@/lib/api";
 import { Me, homeFor, useAuth } from "@/lib/useAuth";
+import { kindShown, useEnabledKinds } from "@/lib/useKinds";
 import VerifyEmailBanner from "./VerifyEmailBanner";
 import AuthModal from "./AuthModal";
 import Footer from "./Footer";
@@ -34,20 +35,21 @@ const TITLES: [string, string][] = [
   ["/admin", "Administration"],
 ];
 
-const PUBLIC_PATHS = ["/", "/connexion", "/questionnaire", "/soutenir", "/mot-de-passe-oublie", "/reinitialiser", "/verifier-email", "/a-propos", "/conditions", "/confidentialite"];
+const PUBLIC_PATHS = ["/", "/connexion", "/questionnaire", "/soutenir", "/verifier-email", "/mot-de-passe-oublie", "/reinitialiser", "/confidentialite", "/conditions", "/a-propos", "/desabonner", "/hors-ligne", "/tarifs"];
 const PUBLIC_PREFIXES = ["/destinations"];
 
 function PublicShell({ children, me }: { children: React.ReactNode; me: Me | null }) {
   const loggedIn = !!me;
   const [open, setOpen] = useState(false);
+  const kinds = useEnabledKinds();
   const path = usePathname();
   const { t } = useT();
   const links = [
     { href: "/bourses", label: t("Bourses") },
-    { href: "/bourses?kind=stage", label: t("Stages") },
+    ...(kindShown(kinds, "stage") ? [{ href: "/bourses?kind=stage", label: t("Stages") }] : []),
     { href: "/questionnaire", label: t("Mon profil en 5 étapes") },
     { href: "/#comment", label: t("Comment ça marche") },
-    { href: "/#offres", label: t("Tarifs") },
+    { href: "/tarifs", label: t("Tarifs") },
   ];
   return (
     <div className="min-h-screen">
@@ -121,7 +123,7 @@ function AppShell({ children, me }: { children: React.ReactNode; me: Me | null }
               <span className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-brand">{t("Demander")} <Icon name="arrow" className="h-3.5 w-3.5" /></span>
             </Link>
           )}
-          <button onClick={() => { setToken(null); router.push("/"); }}
+          <button onClick={async () => { await signOut(); router.push("/"); }}
             className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm text-muted hover:bg-paper hover:text-ink">
             <Icon name="logout" className="h-[18px] w-[18px]" /> {t("Déconnexion")}
           </button>

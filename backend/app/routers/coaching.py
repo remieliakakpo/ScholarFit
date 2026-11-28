@@ -1,7 +1,7 @@
 """Accompagnement des candidatures : côté candidat, côté conseiller et côté administration."""
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -18,7 +18,7 @@ from ..schemas import (
     CoachingDetailOut, CoachingFileOut, CoachingOut, CoachingRequestIn, FeedbackIn, MeetingIn, MeetingOut, MeetingUpdate,
     MessageIn, MessageOut, PaymentIn, StepIn, StepOut, StepUpdate, StudentSummary,
 )
-from ..security import admin_user, current_user
+from ..security import admin_user, current_user, verified_user
 from .applications import app_out
 
 router = APIRouter(prefix="/api/accompagnement", tags=["accompagnement"])
@@ -30,7 +30,7 @@ admin_router = APIRouter(prefix="/api/admin", tags=["administration"])
 def _role(c: Coaching, user: User) -> str | None:
     if c.student_id == user.id:
         return "candidat"
-    if user.advisor is not None and c.advisor_id == user.advisor.id:
+    if user.is_advisor and c.advisor_id == user.advisor.id:  # un conseiller désactivé perd l'accès aux dossiers
         return "conseiller"
     if user.is_admin:
         return "admin"
@@ -129,7 +129,7 @@ def my_coachings(user: User = Depends(current_user), db: Session = Depends(get_d
 
 
 @router.post("", response_model=CoachingOut, status_code=201)
-def request_coaching(body: CoachingRequestIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def request_coaching(body: CoachingRequestIn, user: User = Depends(verified_user), db: Session = Depends(get_db)):
     """Demande d'accompagnement. Un seul accompagnement ouvert à la fois."""
     if not body.share_consent:
         raise HTTPException(422, t("Votre accord est nécessaire : le conseiller doit voir votre profil, votre CV et vos candidatures pour vous aider.", "Your consent is needed: the adviser must see your profile, CV and applications to help you."))
@@ -168,7 +168,7 @@ def request_coaching(body: CoachingRequestIn, user: User = Depends(current_user)
 @router.get("/conseiller", response_model=list[CoachingOut])
 def advisor_coachings(user: User = Depends(current_user), db: Session = Depends(get_db)):
     """Espace conseiller : les candidats suivis, les plus récents d'abord."""
-    if user.advisor is None:
+    if not user.is_advisor:  # un conseiller désactivé perd l'accès
         raise HTTPException(403, t("Réservé aux conseillers", "Advisers only"))
     cs = db.scalars(select(Coaching).where(Coaching.advisor_id == user.advisor.id).order_by(Coaching.updated_at.desc()))
     return [_out(c, "conseiller") for c in cs]
@@ -233,6 +233,21 @@ def _file_out(f: CoachingFile, user: User) -> CoachingFileOut:
                            mine=f.author_id == user.id)
 
 
+# Premiers octets de chaque format accepté (le .docx est une archive zip, le .doc un fichier OLE)
+SIGNATURES = {
+    "application/pdf": (b"%PDF",),
+    "image/jpeg": (b"\xff\xd8\xff",),
+    "image/png": (b"\x89PNG\r\n\x1a\n",),
+    "application/msword": (b"\xd0\xcf\x11\xe0",),
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": (b"PK\x03\x04",),
+}
+
+
+def _content_matches(ctype: str, data: bytes) -> bool:
+    sigs = SIGNATURES.get(ctype)
+    return sigs is None or data.startswith(sigs)
+
+
 @router.post("/{cid}/fichiers", response_model=CoachingFileOut, status_code=201)
 async def upload_file(cid: int, file: UploadFile = File(...), category: str = Form("piece"), note: str = Form(""),
                       user: User = Depends(current_user), db: Session = Depends(get_db)):
@@ -251,6 +266,8 @@ async def upload_file(cid: int, file: UploadFile = File(...), category: str = Fo
         raise HTTPException(413, t("Le fichier dépasse 8 Mo.", "The file is larger than 8 MB."))
     if not data:
         raise HTTPException(422, t("Le fichier est vide.", "The file is empty."))
+    if not _content_matches(ctype, data):  # le type annoncé par le navigateur doit correspondre au contenu
+        raise HTTPException(415, t("Formats acceptés : PDF, Word, JPG ou PNG.", "Accepted formats: PDF, Word, JPG or PNG."))
     name = "".join(ch for ch in (file.filename or "document") if ch.isalnum() or ch in " ._-()").strip()[:150] or "document"
     if not name.lower().endswith(FILE_TYPES[ctype]) and not (ctype == "image/jpeg" and name.lower().endswith(".jpeg")):
         name += FILE_TYPES[ctype]
@@ -512,7 +529,7 @@ def update_advisor(aid: int, body: AdvisorUpdate, _: User = Depends(admin_user),
 
 
 @admin_router.patch("/accompagnement/{cid}/paiement", response_model=AdminCoachingOut)
-def admin_payment(cid: int, body: PaymentIn, _: User = Depends(admin_user), db: Session = Depends(get_db)):
+def admin_payment(cid: int, body: PaymentIn, request: Request, _: User = Depends(admin_user), db: Session = Depends(get_db)):
     """Le paiement (Mobile Money, Wave, Orange Money, virement…) se fait hors plateforme dans le MVP :
     l'administrateur indique ici qu'il est reçu."""
     if body.payment_status not in PAYMENT_STATUSES:
@@ -520,6 +537,8 @@ def admin_payment(cid: int, body: PaymentIn, _: User = Depends(admin_user), db: 
     c = db.get(Coaching, cid)
     if not c:
         raise HTTPException(404, t("Accompagnement introuvable", "Coaching not found"))
+    request.state.audit_details = {"avant": c.payment_status, "apres": body.payment_status, "prix": c.price,
+                                   "candidat": c.student.email}
     c.payment_status = body.payment_status
     db.commit()
     return _out(c, "admin", AdminCoachingOut, student_email=c.student.email)

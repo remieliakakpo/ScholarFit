@@ -53,6 +53,11 @@ def absolute_url(path: str) -> str:
     return get_settings().site_url.rstrip("/") + "/" + path.lstrip("/")
 
 
+def link(path: str) -> str:
+    """Lien absolu vers une page du site (liens des e-mails)."""
+    return absolute_url(path)
+
+
 def email_button(label: str, path: str) -> Button:
     return Button(label, absolute_url(path))
 
@@ -98,12 +103,16 @@ def _sender() -> tuple[str, str]:
     return name or "ScholarFit", addr or "no-reply@scholarfit.local"
 
 
-def _deliver(to: str, subject: str, text: str, html_body: str | None) -> None:
+def _deliver(to: str, subject: str, text: str, html_body: str | None, headers: dict[str, str] | None = None) -> None:
     """Envoie vraiment l'e-mail ; lève une exception en cas d'échec."""
     s = get_settings()
     backend = s.mail_backend
     name, addr = _sender()
     if backend == "console":
+        if not s.is_dev:
+            # En ligne sans moyen d'envoi : on ne recopie pas le message (il peut contenir un lien
+            # de réinitialisation de mot de passe) dans les journaux, lisibles par d'autres.
+            raise RuntimeError("aucun moyen d'envoi configuré (EMAIL_BACKEND, SMTP_HOST, BREVO_API_KEY ou RESEND_API_KEY)")
         banner = "=" * 70
         msg = f"\n{banner}\nE-MAIL (EMAIL_BACKEND=console, il n'est pas envoyé)\nÀ : {to}\nObjet : {subject}\n\n{text}\n{banner}"
         log.warning(msg)
@@ -117,6 +126,8 @@ def _deliver(to: str, subject: str, text: str, html_body: str | None) -> None:
         m["Message-ID"] = make_msgid(domain=addr.rsplit("@", 1)[-1] or None)
         if s.email_reply_to:
             m["Reply-To"] = s.email_reply_to
+        for k, v in (headers or {}).items():
+            m[k] = v
         m.set_content(text)
         if html_body:
             m.add_alternative(html_body, subtype="html")
@@ -139,6 +150,8 @@ def _deliver(to: str, subject: str, text: str, html_body: str | None) -> None:
                    "subject": subject, "htmlContent": html_body or text, "textContent": text}
         if s.email_reply_to:
             payload["replyTo"] = {"email": s.email_reply_to}
+        if headers:
+            payload["headers"] = headers
         r = httpx.post("https://api.brevo.com/v3/smtp/email", json=payload, timeout=20,
                        headers={"api-key": s.brevo_api_key, "accept": "application/json"})
         r.raise_for_status()
@@ -147,6 +160,8 @@ def _deliver(to: str, subject: str, text: str, html_body: str | None) -> None:
         payload = {"from": s.smtp_from, "to": [to], "subject": subject, "html": html_body or text, "text": text}
         if s.email_reply_to:
             payload["reply_to"] = s.email_reply_to
+        if headers:
+            payload["headers"] = headers
         r = httpx.post("https://api.resend.com/emails", json=payload, timeout=20,
                        headers={"Authorization": f"Bearer {s.resend_api_key}"})
         r.raise_for_status()
@@ -177,15 +192,15 @@ def send_email(db: Session | None, to: str, subject: str, text: str, *, button: 
             return False
     return status == "envoye"
 
-def send_mail(to: str, subject: str, text: str, html: str | None = None) -> bool:
+def send_mail(to: str, subject: str, text: str, html: str | None = None, headers: dict[str, str] | None = None) -> bool:
     """Envoie un e-mail déjà mis en forme. Renvoie False (sans lever d'erreur) si l'envoi échoue."""
     try:
-        _deliver(to, subject, text, html)
+        _deliver(to, subject, text, html, headers)
         if get_settings().mail_backend != "console":
             log.info("E-mail « %s » envoyé à %s", subject, to)
         return True
-    except Exception:  # noqa: BLE001 - un e-mail perdu ne doit pas casser l'action de l'utilisateur
-        log.exception("Échec de l'envoi de l'e-mail « %s » à %s", subject, to)
+    except Exception as e:  # noqa: BLE001 - un e-mail perdu ne doit pas casser l'action de l'utilisateur
+        log.warning("Échec de l'envoi de l'e-mail « %s » à %s : %s", subject, to, e)
         return False
 
 

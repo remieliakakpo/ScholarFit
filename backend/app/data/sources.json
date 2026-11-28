@@ -82,9 +82,9 @@
     "connector": "site",
     "limit": 60,
     "frequency_hours": 168,
-    "enabled": false,
+    "enabled": true,
     "kind": "conference",
-    "note": "Annuaire de conférences académiques. Désactivé : très volumineux, à filtrer par domaine avant d'activer (paramètre paths).",
+    "note": "Annuaire de conférences académiques. Activé : très volumineux ; filtrer par domaine (paramètre paths) si besoin.",
     "feed_pages": 3
   },
   {
@@ -170,6 +170,52 @@
     "kind": "bourse"
   },
   {
+    "name": "Opportunities Corners",
+    "url": "https://opportunitiescorners.com",
+    "method": "page",
+    "connector": "site",
+    "limit": 80,
+    "frequency_hours": 168,
+    "enabled": true,
+    "note": "Bourses, stages, conférences, formations, concours, programmes d'échange, fellowships et cours en ligne. Lu par catégorie (un flux par type) : les guides de visa, conseils et articles de blog ne sont pas lus.",
+    "feed_pages": 2,
+    "feeds": [
+      {
+        "url": "https://opportunitiescorners.com/category/bachelor-master-phd-scholarships/feed/",
+        "kind": "bourse"
+      },
+      {
+        "url": "https://opportunitiescorners.com/category/internships/feed/",
+        "kind": "stage"
+      },
+      {
+        "url": "https://opportunitiescorners.com/category/conferences/feed/",
+        "kind": "conference"
+      },
+      {
+        "url": "https://opportunitiescorners.com/category/trainings/feed/",
+        "kind": "formation"
+      },
+      {
+        "url": "https://opportunitiescorners.com/category/competitions/feed/",
+        "kind": "concours"
+      },
+      {
+        "url": "https://opportunitiescorners.com/category/exchange-programs/feed/",
+        "kind": "echange"
+      },
+      {
+        "url": "https://opportunitiescorners.com/category/fellowships/feed/",
+        "kind": "fellowship"
+      },
+      {
+        "url": "https://opportunitiescorners.com/category/online-courses/feed/",
+        "kind": "cours_en_ligne"
+      }
+    ],
+    "exclude_pattern": "(visa|study-permit|tips|guide|how-to|jobs?\\b)"
+  },
+  {
     "name": "ReliefWeb (stages ONU, ONG, organisations internationales)",
     "url": "https://api.reliefweb.int",
     "method": "api",
@@ -182,22 +228,23 @@
   },
   {
     "name": "EURAXESS (offres de doctorat, flux RSS)",
-    "url": "https://euraxess.ec.europa.eu/jobs/feed",
-    "method": "rss",
-    "connector": "rss",
-    "limit": 20,
-    "enabled": false,
-    "note": "Exemple de connecteur RSS. Vérifier l'URL exacte du flux et les conditions d'utilisation avant d'activer."
-  },
-  {
-    "name": "Campus France : annuaire Campus Bourses",
-    "url": "https://www.campusfrance.org/fr/bourses-etudiants-internationaux",
+    "url": "https://euraxess.ec.europa.eu/jobs/search",
     "method": "page",
     "connector": "page_list",
     "link_selector": "a",
-    "link_pattern": "/fr/.*bourse",
-    "limit": 20,
+    "link_pattern": "/jobs/\\d+$",
+    "limit": 10,
     "enabled": false,
-    "note": "Exemple de connecteur liste + fiches. Lire robots.txt et les CGU, et privilégier un partenariat."
+    "note": "Désactivée (vérifié en novembre 2026) : EURAXESS n'a plus de flux RSS (/jobs/feed renvoie 404) et bloque les robots dès qu'on filtre ou pagine la recherche (403, 429). Seule la page brute des 10 dernières offres de recherche est lisible, et ce sont surtout des postes de chercheurs que l'extraction écarte. À reprendre par un partenariat ou une saisie manuelle des appels de financement doctoral."
+  },
+  {
+    "name": "Campus France : annuaire Campus Bourses",
+    "url": "https://campusbourses.campusfrance.org/",
+    "method": "api",
+    "connector": "campusbourses",
+    "limit": 60,
+    "frequency_hours": 168,
+    "enabled": true,
+    "note": "Annuaire Campus Bourses (programmes pour étudier en France). L'ancienne page /fr/bourses-etudiants-internationaux n'existe plus : on lit l'API JSON ouverte du site (bourses-api.campusfrance.org), 60 fiches par passage, les plus récentes d'abord."
   }
 ]

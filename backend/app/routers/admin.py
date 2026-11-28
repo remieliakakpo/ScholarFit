@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -74,9 +74,10 @@ def broken_links(_: User = Depends(admin_user), db: Session = Depends(get_db)):
 
 
 @router.delete("/scholarships/{sid}", status_code=204)
-def delete(sid: int, _: User = Depends(admin_user), db: Session = Depends(get_db)):
+def delete(sid: int, request: Request, _: User = Depends(admin_user), db: Session = Depends(get_db)):
     s = db.get(Scholarship, sid)
     if s:
+        request.state.audit_details = {"titre": s.title, "lien": s.official_url}
         db.delete(s)
         db.commit()
 
@@ -96,14 +97,25 @@ def sources_config(_: User = Depends(admin_user)):
 @router.post("/sources/{name}/run")
 def run(name: str, _: User = Depends(admin_user), db: Session = Depends(get_db)):
     try:
-        return {"status": run_source(db, name)}
+        status = run_source(db, name)
     except ValueError as e:
         raise HTTPException(404, str(e)) from e
+    from ..ai.batch import submit_pending
+
+    sent = submit_pending(db)  # lancé à la main : on n'attend pas le prochain passage pour envoyer le lot
+    return {"status": status, "lot_envoye": sent}
 
 
 class ExtractIn(BaseModel):
-    url: str
+    url: str = Field(max_length=2000)
     save: bool = False
+
+    @field_validator("url")
+    @classmethod
+    def _http(cls, v: str) -> str:
+        from ..netguard import http_url
+
+        return http_url(v) or ""
 
 
 @router.post("/extract")
@@ -123,7 +135,10 @@ def extract_url(body: ExtractIn, _: User = Depends(admin_user), db: Session = De
         return {"is_scholarship": False}
     if body.save:
         record["organization"] = record.get("organization") or "À compléter"
-        s, _new = upsert(db, record, source=None)
+        try:
+            s, _new = upsert(db, record, source=None)
+        except ValueError as e:
+            raise HTTPException(422, f"Fiche non enregistrée : {e}") from e
         db.commit()
         return {"is_scholarship": True, "saved_id": s.id, "record": record}
     return {"is_scholarship": True, "record": record}
@@ -136,6 +151,48 @@ def maintenance(_: User = Depends(admin_user), db: Session = Depends(get_db)):
     alerts = run_alerts(db)
     reminders = run_reminders(db)
     return {"bourses_mises_a_jour": expired, "alertes_creees": alerts, "rappels_accompagnement": reminders}
+
+
+# ---------------------------------------------------------------- types d'opportunités affichés
+class KindsIn(BaseModel):
+    kinds_enabled: list[str] = Field(max_length=20)
+
+
+@router.get("/types")
+def opportunity_types(_: User = Depends(admin_user), db: Session = Depends(get_db)):
+    """Tous les types, avec leur état (affiché ou non) et le nombre d'offres en base."""
+    from .. import i18n
+    from ..deadlines import deadline_info
+    from ..site_settings import enabled_kinds
+    from ..vocab import KINDS
+
+    shown = enabled_kinds(db)
+    today = datetime.now(timezone.utc).date()
+    counts = {k: [0, 0] for k in KINDS}
+    for s in db.scalars(select(Scholarship)):
+        row = counts.setdefault(s.kind or "bourse", [0, 0])
+        row[0] += 1
+        row[1] += deadline_info(s, today).status != "expiree"
+    labels = i18n.loc(KINDS, i18n.KINDS_EN)
+    return [{"kind": k, "label": labels[k], "enabled": k in shown, "total": counts[k][0], "open": counts[k][1]} for k in KINDS]
+
+
+@router.put("/types")
+def set_opportunity_types(body: KindsIn, request: Request, _: User = Depends(admin_user), db: Session = Depends(get_db)):
+    """Choisit les types affichés sur le site (et collectés). Au moins un doit rester."""
+    from ..site_settings import enabled_kinds, set_enabled_kinds
+    from ..vocab import KINDS
+
+    unknown = [k for k in body.kinds_enabled if k not in KINDS]
+    if unknown:
+        raise HTTPException(422, f"Types inconnus : {unknown}")
+    before = enabled_kinds(db)
+    try:
+        after = set_enabled_kinds(db, body.kinds_enabled)
+    except ValueError as e:
+        raise HTTPException(422, "Gardez au moins un type affiché") from e
+    request.state.audit_details = {"avant": before, "apres": after}  # journal d'audit
+    return {"kinds_enabled": after}
 
 
 # ---------- Relecture des fiches collectées automatiquement ----------
@@ -165,8 +222,10 @@ def review_decide(sid: int, body: ReviewIn, _: User = Depends(admin_user), db: S
 
 
 @router.get("/sauvegarde")
-def download_backup(_: User = Depends(admin_user)):
-    """Télécharge une sauvegarde complète de la base (.json.gz), à garder hors de Railway."""
+def download_backup(request: Request, admin: User = Depends(admin_user)):
+    """Télécharge une sauvegarde complète de la base (.json.gz), à garder hors de Railway.
+    Elle contient des données personnelles : chaque téléchargement est inscrit au journal d'audit."""
+    from .. import audit
     import tempfile
     from pathlib import Path
 
@@ -177,10 +236,12 @@ def download_backup(_: User = Depends(admin_user)):
 
     db = SessionLocal()
     try:
+        audit.record(db, admin, "sauvegarde de la base téléchargée", target_type="base", request=request)
+        db.commit()
         with tempfile.TemporaryDirectory() as tmp:
             path = backup(db, directory=tmp, keep=0)
             data = Path(path).read_bytes()
             name = Path(path).name
     finally:
         db.close()
-    return Response(data, media_type="application/gzip", headers={"Content-Disposition": f'attachment; filename="{name}"'})
+    return Response(data, media_type="application/gzip", headers={"Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "no-store"})

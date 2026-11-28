@@ -2,7 +2,7 @@
 import { useRef, useState } from "react";
 import Icon from "@/components/Icon";
 import { useT } from "@/components/LangProvider";
-import { ApiError, API_URL, CoachingDetail, CoachingFile, api, getToken } from "@/lib/api";
+import { ApiError, API_URL, CREDENTIALS, CoachingDetail, CoachingFile, api, apiHeaders } from "@/lib/api";
 
 const CATEGORY: Record<CoachingFile["category"], string> = {
   livrable: "Document livré par l'expert",
@@ -46,7 +46,7 @@ export default function CoachingFiles({ c, open, isAdvisor, reload }: { c: Coach
   async function download(f: CoachingFile) {
     setError(null);
     try {
-      const res = await fetch(`${API_URL}/api/accompagnement/${c.id}/fichiers/${f.id}`, { headers: { Authorization: `Bearer ${getToken() ?? ""}` } });
+      const res = await fetch(`${API_URL}/api/accompagnement/${c.id}/fichiers/${f.id}`, { headers: apiHeaders(), credentials: CREDENTIALS });
       if (!res.ok) throw new ApiError(res.status, t("Téléchargement impossible"));
       const url = URL.createObjectURL(await res.blob());
       const a = document.createElement("a");

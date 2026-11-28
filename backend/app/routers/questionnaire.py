@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -22,7 +22,7 @@ from ..models import Profile, Scholarship, User
 from ..schemas import MatchOut
 from ..security import optional_user
 from ..serializers import match_out
-from ..vocab import COUNTRIES, DOMAINS, LEVEL_ORDER, LEVELS
+from ..vocab import COUNTRIES, DOMAINS, LEVEL_ORDER, LEVELS, KIND_OR_ALL_PATTERN
 from ..visibility import public_filter
 
 router = APIRouter(prefix="/api", tags=["questionnaire et offres"])
@@ -69,6 +69,10 @@ def steps() -> list[dict]:
                  "required": False, "options": country_opts},
                 {"id": "birth_date", "label": t("Date de naissance", "Date of birth"), "type": "date", "required": True,
                  "placeholder": t("Beaucoup de bourses fixent un âge maximum", "Many scholarships set a maximum age")},
+                {"id": "gender", "label": t("Vous êtes", "You are"), "type": "select", "required": False,
+                 "options": _opts({"f": t("Une femme", "A woman"), "m": t("Un homme", "A man")}),
+                 "placeholder": t("Facultatif. Certaines bourses et stages sont réservés aux femmes.",
+                                  "Optional. Some scholarships and internships are reserved for women.")},
             ],
         },
         {
@@ -114,8 +118,8 @@ def steps() -> list[dict]:
             "subtitle": t("Pour vous montrer les bourses réservées et l'offre qui vous convient.",
                           "To show you reserved scholarships and the option that suits you."),
             "questions": [
-                {"id": "situations", "label": t("Ces situations vous concernent-elles ? (facultatif, reste privé)",
-                                                "Do any of these apply to you? (optional, kept private)"), "type": "multiselect",
+                {"id": "situations", "label": t("Ces situations vous concernent-elles ? (facultatif : en cochant, vous acceptez qu'elles servent uniquement à trouver les bourses qui vous sont réservées ; elles restent privées)",
+                                                "Do any of these apply to you? (optional: by ticking, you agree they are used only to find scholarships reserved for you; they stay private)"), "type": "multiselect",
                  "required": False, "options": _opts(situation_labels())},
                 {"id": "applications_planned", "label": t("À combien de bourses souhaitez-vous postuler ?",
                                                           "How many scholarships would you like to apply for?"),
@@ -132,6 +136,15 @@ def steps() -> list[dict]:
 
 class QuestionnaireIn(BaseModel):
     answers: dict
+
+    @field_validator("answers")
+    @classmethod
+    def _size(cls, v: dict) -> dict:
+        import json
+
+        if len(v) > 60 or len(json.dumps(v, ensure_ascii=False, default=str)) > 20_000:
+            raise ValueError("réponses trop longues")
+        return v
 
 
 class QuestionnaireOut(BaseModel):
@@ -201,6 +214,7 @@ def _clean(a: dict) -> dict:
             raise HTTPException(422, t(f"Score invalide pour {k}", f"Invalid score for {k}"))
     out["language_scores"] = scores
     out["situations"] = [x for x in a.get("situations") or [] if x in SITUATION_LABELS]
+    out["gender"] = a.get("gender") if a.get("gender") in ("f", "m") else None
     if a.get("applications_planned") not in (None, ""):
         try:
             out["applications_planned"] = max(1, min(50, int(a["applications_planned"])))
@@ -219,7 +233,7 @@ def questionnaire():
 
 
 @router.post("/questionnaire", response_model=QuestionnaireOut)
-def submit(body: QuestionnaireIn, kind: str = Query("bourse", pattern="^(bourse|stage|conference|tout)$"), user: User | None = Depends(optional_user), db: Session = Depends(get_db)):
+def submit(body: QuestionnaireIn, kind: str = Query("bourse", pattern=KIND_OR_ALL_PATTERN), user: User | None = Depends(optional_user), db: Session = Depends(get_db)):
     data = _clean(body.answers)
     today = date.today()
     if user is not None:
@@ -227,6 +241,7 @@ def submit(body: QuestionnaireIn, kind: str = Query("bourse", pattern="^(bourse|
         user.profile = p
         for k, v in data.items():
             setattr(p, k, v)
+        p.sync_sensitive_consent()
         p.questionnaire_done_at = datetime.now(timezone.utc)
         db.commit()
         c = Criteria.from_profile(p, today)
@@ -240,7 +255,12 @@ def submit(body: QuestionnaireIn, kind: str = Query("bourse", pattern="^(bourse|
             languages=list(data["languages"]), project_text=data.get("project", ""),
             full_funding_only=data["full_funding_only"], situations=data["situations"],
         )
-    stmt = select(Scholarship).where(public_filter()) if kind == "tout" else select(Scholarship).where(public_filter(), Scholarship.kind == kind)
+    from ..site_settings import enabled_kinds
+
+    shown = enabled_kinds(db)
+    stmt = select(Scholarship).where(public_filter(), Scholarship.kind.in_(shown))
+    if kind != "tout":
+        stmt = stmt.where(Scholarship.kind == kind)
     pool = list(db.scalars(stmt))
     results, excluded = rank(pool, c, today, limit=500)
     later = [match_out(m) for m in next_session(pool, c, today)] if user is not None else []

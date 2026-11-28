@@ -8,7 +8,7 @@ export default function CountUp({ value, duration = 1200 }: { value: number; dur
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) { setN(value); return; }
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches || document.documentElement.dataset.lite) { setN(value); return; }
     let raf = 0;
     const io = new IntersectionObserver(([e]) => {
       if (!e.isIntersecting) return;

@@ -3,16 +3,16 @@ import re
 
 import pytest
 
-from conftest import login
+from tests.conftest import login, session_headers
+
+TERMS = {"accept_terms": True}
 
 
 @pytest.fixture()
 def outbox(monkeypatch):
     sent = []
-    monkeypatch.setattr("app.routers.auth.send_mail", lambda to, subject, text, html=None: sent.append({"to": to, "subject": subject, "text": text, "html": html}) or True)
-    from app.routers import auth
-
-    auth._last_mail.clear()
+    monkeypatch.setattr("app.routers.auth.send_mail",
+                        lambda to, subject, text, html=None, headers=None: sent.append({"to": to, "subject": subject, "text": text, "html": html}) or True)
     return sent
 
 
@@ -28,6 +28,7 @@ def test_documented_demo_accounts_work_and_land_on_their_dashboard(client):
         r = client.post("/api/auth/login", json={"email": email, "password": pw})
         assert r.status_code == 200, (email, r.text)
         assert r.json()["home"] == home
+        client.cookies.clear()
     me = client.get("/api/auth/me", headers=login(client)).json()
     assert me["display_name"] == "Awa" and me["email_verified"] is True
 
@@ -59,16 +60,16 @@ def test_sqlite_path_does_not_depend_on_working_directory():
 
 
 def test_register_with_name_greets_and_verifies_email(client, outbox):
-    r = client.post("/api/auth/register", json={"name": "  Kossi  ", "email": "kossi@example.org", "password": "motdepasse1"})
+    r = client.post("/api/auth/register", json={"name": "  Kossi  ", "email": "kossi@example.org", "password": "motdepasse1", **TERMS})
     assert r.status_code == 201, r.text
-    assert r.json()["home"] == "/profil"
-    h = {"Authorization": f"Bearer {r.json()['access_token']}"}
+    assert r.json()["home"] == "/profil" and "access_token" not in r.json()
+    h = session_headers(client, r)
     me = client.get("/api/auth/me", headers=h).json()
     assert me["name"] == "Kossi" and me["display_name"] == "Kossi" and me["email_verified"] is False
     assert len(outbox) == 1 and outbox[0]["to"] == "kossi@example.org" and "Salut Kossi" in outbox[0]["text"]
     token = _link(outbox[0], "/verifier-email")
     # le lien n'ouvre pas de session
-    assert client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"}).status_code == 401
+    assert client.get("/api/auth/me", headers={"Cookie": f"sf_session={token}"}).status_code == 401
     assert client.post("/api/auth/verification", json={"token": token + "x"}).status_code == 400
     assert client.post("/api/auth/verification", json={"token": token}).json()["verified"] is True
     assert client.get("/api/auth/me", headers=h).json()["email_verified"] is True
@@ -79,40 +80,46 @@ def test_register_with_name_greets_and_verifies_email(client, outbox):
 
 
 def test_resend_verification_has_cooldown(client, outbox):
-    r = client.post("/api/auth/register", json={"name": "Fatou", "email": "fatou@example.org", "password": "motdepasse1"})
-    h = {"Authorization": f"Bearer {r.json()['access_token']}"}
-    assert client.post("/api/auth/verification/envoyer", headers=h).status_code == 429
-    from app.routers import auth
+    from app import ratelimit
 
-    auth._last_mail.clear()
+    r = client.post("/api/auth/register", json={"name": "Fatou", "email": "fatou@example.org", "password": "motdepasse1", **TERMS})
+    h = session_headers(client, r)
+    assert client.post("/api/auth/verification/envoyer", headers=h).status_code == 429  # e-mail parti à l'inscription
+    ratelimit.reset("resend-1min:")
     assert client.post("/api/auth/verification/envoyer", headers=h).json()["sent"] is True
     assert len(outbox) == 2
 
 
 def test_name_is_optional_for_api_and_falls_back(client):
-    r = client.post("/api/auth/register", json={"email": "sans.nom@example.org", "password": "motdepasse1"})
-    h = {"Authorization": f"Bearer {r.json()['access_token']}"}
+    r = client.post("/api/auth/register", json={"email": "sans.nom@example.org", "password": "motdepasse1", **TERMS})
+    h = session_headers(client, r)
     assert client.get("/api/auth/me", headers=h).json()["display_name"] == "sans.nom"
-    bad = client.post("/api/auth/register", json={"name": "<b>", "email": "bad@example.org", "password": "motdepasse1"})
+    bad = client.post("/api/auth/register", json={"name": "<b>", "email": "bad@example.org", "password": "motdepasse1", **TERMS})
     assert bad.status_code == 422
 
 
 def test_forgot_and_reset_password(client, outbox):
-    client.post("/api/auth/register", json={"name": "Yao", "email": "yao@example.org", "password": "motdepasse1"})
+    from app.security import VERIFY_EMAIL
+
+    client.post("/api/auth/register", json={"name": "Yao", "email": "yao@example.org", "password": "motdepasse1", **TERMS})
+    client.cookies.clear()
     outbox.clear()
     # même réponse pour une adresse inconnue, et aucun e-mail
-    assert client.post("/api/auth/mot-de-passe-oublie", json={"email": "inconnu@example.org"}).json() == {"sent": True}
+    assert client.post("/api/auth/mot-de-passe-oublie", json={"email": "inconnu@example.org"}).json()["sent"] is True
     assert outbox == []
-    assert client.post("/api/auth/mot-de-passe-oublie", json={"email": "Yao@Example.org"}).json() == {"sent": True}
+    assert client.post("/api/auth/mot-de-passe-oublie", json={"email": "Yao@Example.org"}).json()["sent"] is True
     assert len(outbox) == 1 and "Yao" in outbox[0]["text"]
     token = _link(outbox[0], "/reinitialiser")
     assert client.post("/api/auth/reinitialiser", json={"token": token, "password": "faible"}).status_code == 422
     r = client.post("/api/auth/reinitialiser", json={"token": token, "password": "nouveau2026"})
     assert r.status_code == 200 and r.json()["home"] == "/mes-bourses"
+    assert "httponly" in r.headers["set-cookie"].lower()  # ce navigateur reste connecté, par cookie
+    client.cookies.clear()
     # le lien ne sert qu'une fois
     assert client.post("/api/auth/reinitialiser", json={"token": token, "password": "encore2026x"}).status_code == 400
     assert client.post("/api/auth/login", json={"email": "yao@example.org", "password": "motdepasse1"}).status_code == 401
     assert client.post("/api/auth/login", json={"email": "yao@example.org", "password": "nouveau2026"}).status_code == 200
+    client.cookies.clear()
     # un lien de confirmation ne remplace pas un lien de réinitialisation
     from app.db import SessionLocal
     from app.models import User
@@ -121,7 +128,7 @@ def test_forgot_and_reset_password(client, outbox):
 
     db = SessionLocal()
     try:
-        verify = create_link_token(db.scalars(select(User).where(User.email == "yao@example.org")).first(), "verify", 10)
+        verify = create_link_token(db.scalars(select(User).where(User.email == "yao@example.org")).first(), VERIFY_EMAIL, 10)
     finally:
         db.close()
     assert client.post("/api/auth/reinitialiser", json={"token": verify, "password": "encore2026x"}).status_code == 400
@@ -134,3 +141,13 @@ def test_mailer_console_fallback(capsys):
     assert send_mail("awa@example.org", subject, text, html) is True
     out = capsys.readouterr().out
     assert "http://localhost:3000/verifier-email?token=abc" in out and "Confirmez votre adresse" in out
+
+
+def test_mailer_console_never_logs_links_in_production(monkeypatch, capsys):
+    """En ligne sans moyen d'envoi, le message (et son lien) n'est pas écrit dans les journaux."""
+    from app.config import get_settings
+    from app.mailer import send_mail
+
+    monkeypatch.setattr(get_settings(), "app_env", "production")
+    assert send_mail("awa@example.org", "Sujet", "lien secret : http://x/reinitialiser?token=abc") is False
+    assert "token=abc" not in capsys.readouterr().out

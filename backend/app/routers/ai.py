@@ -1,13 +1,15 @@
 """CV, lettres de motivation, compatibilité avec une bourse, dossiers et exports."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import Response
-from pydantic import BaseModel, Field
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
+from fastapi.responses import FileResponse, Response
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .. import credits, export
+from .. import credits, export, proofs
 from ..ai.cv import build_cv, cv_plain_text, diagnose
 from ..ai.fit import fit_check
 from ..ai.formats import document_language, letter_style
@@ -17,45 +19,58 @@ from ..i18n import t
 from ..models import Application, CreditOrder, Document, Scholarship, User
 from ..quota import can_use_ai
 from ..routers.profile import get_profile
-from ..security import admin_user, current_user
+from ..security import admin_user, current_user, verified_user
 
 router = APIRouter(prefix="/api", tags=["CV, lettres et dossiers"])
 
 
 # ------------------------------------------------------------------ schémas
+CV_MAX = 30_000  # caractères : un CV de plusieurs pages tient largement
+ANSWER_MAX = 3_000
+
+
 class CVReviewIn(BaseModel):
-    text: str | None = None  # vide = CV importé dans le profil
+    text: str | None = Field(default=None, max_length=CV_MAX)  # vide = CV importé dans le profil
     scholarship_id: int | None = None
 
 
 class CVAdaptIn(BaseModel):
     scholarship_id: int | None = None
-    text: str | None = None
+    text: str | None = Field(default=None, max_length=CV_MAX)
 
 
 class LetterIn(BaseModel):
     scholarship_id: int
-    target_program: str = ""
-    why_country: str = ""
-    why_program: str = ""
-    study_plan: str = ""
-    project_after: str = ""
-    proud_of: str = ""
-    extra: str = ""
-    recipient_address: str = ""
+    target_program: str = Field(default="", max_length=ANSWER_MAX)
+    why_country: str = Field(default="", max_length=ANSWER_MAX)
+    why_program: str = Field(default="", max_length=ANSWER_MAX)
+    study_plan: str = Field(default="", max_length=ANSWER_MAX)
+    project_after: str = Field(default="", max_length=ANSWER_MAX)
+    proud_of: str = Field(default="", max_length=ANSWER_MAX)
+    extra: str = Field(default="", max_length=ANSWER_MAX)
+    recipient_address: str = Field(default="", max_length=1000)
     language: str = Field(default="", pattern="^(|fr|en)$")
     max_words: int = Field(default=450, ge=200, le=1000)
-    tone: str = "sobre"  # sobre | chaleureux | dynamique
+    tone: str = Field(default="sobre", max_length=20)  # sobre | chaleureux | dynamique
 
 
 class DocUpdate(BaseModel):
     data: dict
 
+    @field_validator("data")
+    @classmethod
+    def _size(cls, v: dict) -> dict:
+        import json
+
+        if len(json.dumps(v, ensure_ascii=False, default=str)) > 200_000:
+            raise ValueError("document trop long")
+        return v
+
 
 class OrderIn(BaseModel):
-    method: str
-    reference: str = ""
-    payer_phone: str = ""
+    method: str = Field(max_length=40)
+    reference: str = Field(default="", max_length=120)
+    payer_phone: str = Field(default="", max_length=50)
 
 
 class OrderStatus(BaseModel):
@@ -237,7 +252,7 @@ def my_credits(user: User = Depends(current_user), db: Session = Depends(get_db)
 
 
 @router.post("/credits/orders", status_code=201)
-def new_order(body: OrderIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def new_order(body: OrderIn, user: User = Depends(verified_user), db: Session = Depends(get_db)):
     o = credits.create_order(user, body.method, body.reference, body.payer_phone, db)
     return _order_out(o)
 
@@ -245,7 +260,39 @@ def new_order(body: OrderIn, user: User = Depends(current_user), db: Session = D
 def _order_out(o: CreditOrder) -> dict:
     return {"id": o.id, "amount": o.amount, "currency": o.currency, "method": o.method, "reference": o.reference,
             "payer_phone": o.payer_phone, "status": o.status, "status_label": credits.ORDER_STATUSES.get(o.status, o.status),
-            "created_at": o.created_at.isoformat() if o.created_at else None, "email": o.user.email if o.user else None}
+            "created_at": o.created_at.isoformat() if o.created_at else None, "email": o.user.email if o.user else None,
+            "has_proof": bool(o.proof_path)}
+
+
+@router.post("/credits/orders/{order_id}/preuve")
+async def upload_proof(order_id: int, file: UploadFile = File(...), user: User = Depends(verified_user),
+                       db: Session = Depends(get_db)):
+    """Capture d'écran ou photo du reçu de paiement, pour que l'administrateur valide plus vite."""
+    o = db.get(CreditOrder, order_id)
+    if not o or o.user_id != user.id:
+        raise HTTPException(404, t("Commande introuvable", "Order not found"))
+    if o.status != "en_verification":
+        raise HTTPException(409, t("Ce paiement a déjà été traité", "This payment has already been processed"))
+    data = await file.read(proofs.MAX_BYTES + 1)
+    rel = proofs.save_proof(data)
+    old = o.proof_path
+    o.proof_path, o.proof_uploaded_at = rel, datetime.now(timezone.utc)
+    db.commit()
+    proofs.delete_proof(old)  # une seule preuve par paiement : la nouvelle remplace l'ancienne
+    return _order_out(o)
+
+
+@router.get("/credits/orders/{order_id}/preuve")
+def view_proof(order_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    o = db.get(CreditOrder, order_id)
+    if not o or (o.user_id != user.id and not user.is_admin) or not o.proof_path:
+        raise HTTPException(404, t("Preuve introuvable", "Proof not found"))
+    path = proofs.proof_path(o.proof_path)
+    if not path.is_file():
+        raise HTTPException(404, t("Preuve introuvable", "Proof not found"))
+    return FileResponse(path, media_type="image/jpeg",
+                        headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff",
+                                 "Content-Disposition": f'inline; filename="preuve-{o.id}.jpg"'})
 
 
 @router.get("/admin/credit-orders")
@@ -257,8 +304,10 @@ def admin_orders(status: str | None = None, _: User = Depends(admin_user), db: S
 
 
 @router.patch("/admin/credit-orders/{order_id}")
-def admin_order_status(order_id: int, body: OrderStatus, _: User = Depends(admin_user), db: Session = Depends(get_db)):
+def admin_order_status(order_id: int, body: OrderStatus, request: Request, _: User = Depends(admin_user), db: Session = Depends(get_db)):
     o = db.get(CreditOrder, order_id)
     if not o:
         raise HTTPException(404, t("Commande introuvable", "Order not found"))
+    request.state.audit_details = {"avant": o.status, "apres": body.status, "montant": o.amount, "reference": o.reference,
+                                   "compte": o.user.email if o.user else None}
     return _order_out(credits.set_order_status(o, body.status, db))

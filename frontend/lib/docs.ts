@@ -1,5 +1,5 @@
 // CV, lettres, compatibilité et dossiers payants : types et appels à l'API.
-import { API_URL, ApiError, getToken } from "./api";
+import { API_URL, ApiError, CREDENTIALS, apiHeaders } from "./api";
 import { clientLang, translate } from "./i18n";
 
 export type CVEntry = { title: string; organization: string; location: string; dates: string; bullets: string[] };
@@ -91,15 +91,13 @@ export class DocError extends ApiError {
 }
 
 async function call(path: string, init: RequestInit = {}): Promise<Response> {
-  const headers = new Headers(init.headers);
-  const token = getToken();
-  if (token) headers.set("Authorization", `Bearer ${token}`);
+  const headers = apiHeaders(init.headers);
   if (init.body && !(init.body instanceof FormData)) headers.set("Content-Type", "application/json");
   let res: Response;
   try {
     const lang = clientLang();
     const url = lang !== "fr" ? `${path}${path.includes("?") ? "&" : "?"}lang=${lang}` : path;
-    res = await fetch(`${API_URL}${url}`, { ...init, headers });
+    res = await fetch(`${API_URL}${url}`, { ...init, headers, credentials: CREDENTIALS });
   } catch {
     throw new DocError(0, translate(clientLang(), "Le serveur de ScholarFit ne répond pas. Réessayez dans un instant."), null);
   }

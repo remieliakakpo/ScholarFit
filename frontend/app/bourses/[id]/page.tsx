@@ -5,8 +5,9 @@ import { notFound } from "next/navigation";
 import { DeadlineBadge } from "@/components/ScholarshipCard";
 import Flag from "@/components/Flag";
 import Icon from "@/components/Icon";
-import Offers from "@/components/Offers";
+import AdvisorBanner from "@/components/AdvisorBanner";
 import DetailActions from "@/components/DetailActions";
+import ScholarshipTools from "@/components/ScholarshipTools";
 import { applyUrl, deadlineInfo, deadlineText, formatAmount, formatDate } from "@/lib/api";
 import { COVERAGE, DEFAULT_STEPS, LINK, conditions, documents, loadScholarship } from "@/lib/scholarship-detail";
 import { getT } from "@/lib/i18n-server";
@@ -15,7 +16,17 @@ import { countryName } from "@/lib/i18n";
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const { t, lang } = await getT();
   const data = await loadScholarship((await params).id, lang);
-  return data ? { title: data.s.title, description: data.s.summary } : { title: t("Bourse introuvable") };
+  if (!data) return { title: t("Bourse introuvable") };
+  const { s } = data;
+  const description = [s.organization, s.deadline ? `${t("Date limite")} : ${s.deadline}` : null, s.summary].filter(Boolean).join(" · ").slice(0, 300);
+  // Aperçu du lien (WhatsApp, Facebook, LinkedIn…) : titre, résumé et image générée (opengraph-image.tsx)
+  return {
+    title: s.title,
+    description,
+    alternates: { canonical: `/bourses/${s.id}` },
+    openGraph: { title: s.title, description, type: "article", url: `/bourses/${s.id}`, siteName: "ScholarFit", locale: lang === "en" ? "en_US" : "fr_FR" },
+    twitter: { card: "summary_large_image", title: s.title, description },
+  };
 }
 
 export default async function Page({ params }: { params: Promise<{ id: string }> }) {
@@ -160,6 +171,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
             <Link href={`/accompagnement?offre=standard&bourse=${s.id}`} className="btn-primary relative mt-4 w-full">{t("Être accompagné")}</Link>
           </div>
           <DetailActions s={s} />
+          <ScholarshipTools s={s} />
         </aside>
       </div>
 
@@ -180,12 +192,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
         </ol>
       </section>
 
-      <section>
-        <p className="eyebrow">{t("Tarifs")}</p>
-        <h2 className="mt-2 text-[1.65rem] sm:text-3xl">{t("Postulez seul ou faites-vous")} <span className="accent">{t("accompagner.")}</span></h2>
-        <p className="mt-2 max-w-2xl text-muted">{t("Postuler vous-même est gratuit. Si vous souhaitez qu'un expert relise votre dossier et vous prépare, choisissez une formule.")}</p>
-        <div className="mt-6"><Offers scholarshipId={s.id} /></div>
-      </section>
+      <AdvisorBanner scholarshipId={s.id} />
     </div>
   );
 }

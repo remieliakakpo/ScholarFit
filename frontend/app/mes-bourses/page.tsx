@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import RequireAuth from "@/components/RequireAuth";
 import Icon from "@/components/Icon";
 import ScholarshipCard from "@/components/ScholarshipCard";
+import { SavedSearchList } from "@/components/SavedSearches";
 import { AlertItem, Match, Meta, api, getMeta } from "@/lib/api";
 import { useT } from "@/components/LangProvider";
 
@@ -29,10 +30,14 @@ function Matches() {
   if (!data) return <p className="text-muted">{t("Calcul de vos bourses…")}</p>;
   if (!data.minimum_ok)
     return (
-      <div className="card mx-auto max-w-lg p-8 text-center">
-        <p className="font-serif text-2xl">{t("Complétez d'abord votre profil minimum")}</p>
-        <p className="mt-2 text-sm text-muted">{t("Il manque :")} {data.missing_minimum.join(", ")}{t(". Sans ces informations, nous ne pouvons pas exclure les bourses auxquelles vous n'avez pas droit.")}</p>
-        <Link href="/profil" className="btn-primary mt-4">{t("Compléter mon profil")}</Link>
+      <div className="mx-auto max-w-lg space-y-4">
+        <div className="card p-8 text-center">
+          <p className="font-serif text-2xl">{t("Complétez d'abord votre profil minimum")}</p>
+          <p className="mt-2 text-sm text-muted">{t("Il manque :")} {data.missing_minimum.join(", ")}{t(". Sans ces informations, nous ne pouvons pas exclure les bourses auxquelles vous n'avez pas droit.")}</p>
+          <Link href="/profil" className="btn-primary mt-4">{t("Compléter mon profil")}</Link>
+        </div>
+        {/* Les recherches enregistrées et leurs alertes ne dépendent pas du profil */}
+        <SavedSearchList />
       </div>
     );
 
@@ -86,6 +91,7 @@ function Matches() {
             </ul>
           )}
         </div>
+        <SavedSearchList />
         <div className="card p-5 text-sm">
           <p className="font-semibold">{t("Comment lire le score")}</p>
           <p className="mt-2 text-muted">{t("Le score mesure la compatibilité entre votre profil et les critères de chaque bourse : niveau, domaine, notes, langues, pays et financement.")}</p>

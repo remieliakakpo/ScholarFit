@@ -13,7 +13,19 @@ LEVELS: dict[str, str] = {
 LEVEL_ORDER = ["BAC", "BAC3", "BAC5", "BAC7"]
 
 # Types d'opportunités
-KINDS: dict[str, str] = {"bourse": "Bourse d'études", "stage": "Stage", "conference": "Conférence"}
+KINDS: dict[str, str] = {
+    "bourse": "Bourse d'études",
+    "stage": "Stage",
+    "conference": "Conférence",
+    "formation": "Formation",
+    "concours": "Concours",
+    "echange": "Programme d'échange",
+    "fellowship": "Fellowship",
+    "cours_en_ligne": "Cours en ligne",
+}
+# Filtre « type » des routes (?kind=…) ; KIND_OR_ALL accepte aussi « tout »
+KIND_PATTERN = "^(" + "|".join(KINDS) + ")$"
+KIND_OR_ALL_PATTERN = "^(" + "|".join(KINDS) + "|tout)$"
 
 DOMAINS: dict[str, str] = {
     "agriculture": "Agriculture et agronomie",

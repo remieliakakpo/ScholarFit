@@ -29,10 +29,7 @@ def check_config(db: Session | None = None) -> list[tuple[str, str]]:
     s = get_settings()
     out: list[tuple[str, str]] = []
     if s.secret_key.startswith("dev-secret") or len(s.secret_key) < 32:
-        if s.is_production:
-            out.append(("CONSEIL", "SECRET_KEY est la valeur par défaut : le site utilise une clé aléatoire gardée dans la base (app_settings), ce qui est sûr. Pour la maîtriser vous-même, mettez votre propre clé : python -c \"import secrets; print(secrets.token_hex(32))\"."))
-        else:
-            out.append(("BLOQUANT", "SECRET_KEY est la valeur par défaut ou trop courte : générez-en une avec python -c \"import secrets; print(secrets.token_hex(32))\"."))
+        out.append(("BLOQUANT", "SECRET_KEY est la valeur par défaut ou trop courte (l'API refuse de démarrer en production) : générez-en une avec python -c \"import secrets; print(secrets.token_hex(32))\"."))
     if s.database_url.startswith("sqlite"):
         out.append(("BLOQUANT", "DATABASE_URL utilise SQLite : en ligne, la base serait effacée à chaque redéploiement. Utilisez PostgreSQL."))
     if not s.site_url.startswith("https://"):
