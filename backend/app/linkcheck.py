@@ -15,8 +15,6 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 
 import httpx
-
-from .netguard import BlockedAddress, safe_client
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -44,8 +42,6 @@ def check_url(url: str, client: httpx.Client) -> tuple[str, str | None, int | No
         if "Name or service not known" in str(e) or "nodename nor servname" in str(e) or isinstance(e, httpx.InvalidURL):
             return "casse", None, None
         return "non_verifie", None, None
-    except BlockedAddress:
-        return "casse", None, None  # lien vers une adresse interne : jamais valable pour le public
     except httpx.HTTPError:
         return "non_verifie", None, None
     final = str(r.url)
@@ -70,7 +66,7 @@ def check_links(db: Session, max_age_days: int = 7, limit: int | None = None) ->
     if limit:
         todo = todo[:limit]
     headers = {"User-Agent": BROWSER_UA, "Accept-Language": "fr,en;q=0.8"}
-    with safe_client(headers=headers, timeout=15, follow_redirects=True) as client:
+    with httpx.Client(headers=headers, timeout=15, follow_redirects=True) as client:
         cache: dict[str, tuple[str, str | None, int | None]] = {}
         for s in todo:
             url = s.official_url

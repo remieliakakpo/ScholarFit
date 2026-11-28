@@ -1,100 +1,94 @@
-"""Comptes : inscription, connexion par cookie httpOnly, vérification de l'adresse, mot de passe oublié."""
-from datetime import datetime, timezone
+import re
+import time
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import audit, ratelimit
 from ..config import get_settings
 from ..db import get_db
-from ..i18n import lang, t
-from ..mailer import link, send_mail
+from ..i18n import t
+from ..mailer import reset_email, send_mail, verification_email
 from ..models import Profile, User
-from ..schemas import ChangePasswordIn, EmailIn, LoginIn, RegisterIn, ResetPasswordIn, TokenIn, UserOut
-from ..security import (
-    RESET_PASSWORD, VERIFY_EMAIL, burn_password_check, clear_session_cookie, create_link_token, current_user,
-    hash_password, password_problem, start_session, user_from_link, verify_password,
-)
+from ..ratelimit import limit
+from ..schemas import EmailIn, LoginIn, RegisterIn, ResetIn, TokenIn, TokenOut, UserOut, UserUpdate
+from ..security import create_link_token, create_token, current_user, hash_password, read_link_token, verify_password
 
 router = APIRouter(prefix="/api/auth", tags=["comptes"])
 
-MIN = 60
-VERIFY_LINK_MINUTES = 48 * 60
-RESET_LINK_MINUTES = 60
+# Un e-mail de confirmation ou de réinitialisation au plus par minute et par adresse
+MAIL_COOLDOWN_SECONDS = 60
+_last_mail: dict[tuple[str, str], float] = {}
 
 
-def _norm(email: str) -> str:
-    return email.strip().lower()
+def _cooldown_ok(kind: str, email: str) -> bool:
+    now = time.monotonic()
+    key = (kind, email)
+    if now - _last_mail.get(key, -1e9) < MAIL_COOLDOWN_SECONDS:
+        return False
+    _last_mail[key] = now
+    return True
 
 
-def _send_verification(user: User) -> None:
-    url = link(f"/verifier-email?token={create_link_token(user, VERIFY_EMAIL, VERIFY_LINK_MINUTES)}")
-    if user.lang == "en":
-        send_mail(user.email, "Confirm your ScholarFit e-mail address",
-                  f"Hello,\n\nTo confirm your e-mail address, open this link (valid for 48 hours):\n{url}\n\n"
-                  "If you did not create a ScholarFit account, ignore this message.\n")
-    else:
-        send_mail(user.email, "Confirmez votre adresse e-mail ScholarFit",
-                  f"Bonjour,\n\nPour confirmer votre adresse e-mail, ouvrez ce lien (valable 48 heures) :\n{url}\n\n"
-                  "Si vous n'avez pas créé de compte ScholarFit, ignorez ce message.\n")
+def home_for(user: User) -> str:
+    """Tableau de bord selon le rôle : administration, espace conseiller ou « Mes bourses »."""
+    if user.is_admin:
+        return "/admin"
+    if user.is_advisor:
+        return "/conseiller"
+    return "/mes-bourses"
 
 
-def _send_reset(user: User) -> None:
-    url = link(f"/reinitialiser-mot-de-passe?token={create_link_token(user, RESET_PASSWORD, RESET_LINK_MINUTES)}")
-    if user.lang == "en":
-        send_mail(user.email, "Reset your ScholarFit password",
-                  f"Hello,\n\nTo choose a new password, open this link (valid for 1 hour, usable once):\n{url}\n\n"
-                  "If you did not ask for this, ignore this message: your password stays the same.\n")
-    else:
-        send_mail(user.email, "Réinitialisez votre mot de passe ScholarFit",
-                  f"Bonjour,\n\nPour choisir un nouveau mot de passe, ouvrez ce lien (valable 1 heure, une seule fois) :\n{url}\n\n"
-                  "Si vous n'êtes pas à l'origine de cette demande, ignorez ce message : votre mot de passe ne change pas.\n")
+def _clean_name(raw: str) -> str:
+    name = re.sub(r"\s+", " ", raw).strip()
+    if len(name) < 2:
+        raise HTTPException(422, t("Indiquez votre prénom ou un nom d'utilisateur (2 caractères minimum).", "Enter your first name or a username (at least 2 characters)."))
+    if re.search(r"[<>@/\\]|https?:|www\.", name, re.I):
+        raise HTTPException(422, t("Le nom d'utilisateur ne peut contenir ni adresse e-mail, ni lien, ni les signes < > / \\.", "The username cannot contain an email address, a link or the signs < > / \\."))
+    return name[:80]
 
 
-def _grant_admin_if_listed(user: User) -> None:
-    """Les adresses de ADMIN_EMAILS deviennent administratrices seulement une fois l'adresse prouvée :
-    sinon, n'importe qui pourrait s'inscrire avec une de ces adresses avant son titulaire."""
+def _check_password(pw: str, email: str) -> None:
+    if len(pw) < 8 or not any(ch.isalpha() for ch in pw) or not any(ch.isdigit() for ch in pw):
+        raise HTTPException(422, t("Le mot de passe doit contenir au moins 8 caractères, dont une lettre et un chiffre.", "The password must have at least 8 characters, including a letter and a number."))
+    if pw.strip().lower() == email or pw.lower() in email:
+        raise HTTPException(422, t("Le mot de passe ne doit pas reprendre votre adresse e-mail.", "The password must not repeat your email address."))
+
+
+def _send_verification(user: User, background: BackgroundTasks) -> None:
+    s = get_settings()
+    link = f"{s.site_url.rstrip('/')}/verifier-email?token={create_link_token(user, 'verify', s.verify_link_hours * 60)}"
+    subject, text, html = verification_email(user.display_name, link, s.verify_link_hours, en=i18n.is_en())
+    background.add_task(send_mail, user.email, subject, text, html)
+
+
+def _grant_admin(user: User) -> None:
+    """Droits d'administrateur seulement pour une adresse de ADMIN_EMAILS dont la boîte a été confirmée."""
     if user.email_verified and user.email in get_settings().admin_email_list:
         user.is_admin = True
 
 
-@router.post("/register", response_model=UserOut, status_code=201)
-def register(body: RegisterIn, request: Request, response: Response, background: BackgroundTasks, db: Session = Depends(get_db)):
-    ratelimit.check(f"register:{ratelimit.client_ip(request)}", 5, 15 * MIN)
-    email = _norm(body.email)
-    if not body.accept_terms:
-        raise HTTPException(422, t("Acceptez les conditions d'utilisation et la politique de confidentialité pour créer un compte.",
-                                   "Please accept the terms of use and the privacy policy to create an account."))
-    problem = password_problem(body.password, email)
-    if problem:
-        raise HTTPException(422, problem)
+@router.post("/register", response_model=TokenOut, status_code=201,
+             dependencies=[Depends(limit("register", 10, 3600))])
+def register(body: RegisterIn, background: BackgroundTasks, db: Session = Depends(get_db)):
+    email = body.email.strip().lower()
+    name = _clean_name(body.name) if body.name.strip() else ""
+    _check_password(body.password, email)
     if db.scalars(select(User).where(User.email == email)).first():
-        raise HTTPException(409, t("Un compte existe déjà avec cet e-mail : connectez-vous ou utilisez une autre adresse.",
-                                   "An account already exists with this e-mail: sign in or use another address."))
-    now = datetime.now(timezone.utc)
-    user = User(email=email, password_hash=hash_password(body.password), terms_accepted_at=now)
-    user.lang = lang()
+        raise HTTPException(409, t("Un compte existe déjà avec cet e-mail : connectez-vous ou utilisez une autre adresse.", "An account already exists with this email: sign in or use another address."))
+    user = User(email=email, name=name, password_hash=hash_password(body.password), is_admin=False)
     user.profile = Profile()
     db.add(user)
     db.commit()
-    background.add_task(_send_verification, user)
-    start_session(response, user)
-    return user
+    _cooldown_ok("verify", email)
+    _send_verification(user, background)
+    return TokenOut(access_token=create_token(user), home="/profil")
 
 
-@router.post("/login", response_model=UserOut)
-def login(body: LoginIn, request: Request, response: Response, db: Session = Depends(get_db)):
-    email = _norm(body.email)
-    ratelimit.check(f"login-ip:{ratelimit.client_ip(request)}", 20, 15 * MIN)
-    fail_key = f"login-fail:{email}"
-    if ratelimit.count(fail_key, 15 * MIN) >= 5:  # 5 erreurs sur un compte : pause de 15 min
-        raise HTTPException(429, t("Trop de tentatives sur ce compte. Réessayez dans 15 min ou utilisez « Mot de passe oublié ».",
-                                   "Too many attempts on this account. Try again in 15 min or use “Forgot password”."),
-                            headers={"Retry-After": str(15 * MIN)})
-    user = db.scalars(select(User).where(User.email == email)).first()
-    if user is None:
-        burn_password_check(body.password)
+@router.post("/login", response_model=TokenOut, dependencies=[Depends(limit("login", 10, 600))])
+def login(body: LoginIn, db: Session = Depends(get_db)):
+    user = db.scalars(select(User).where(User.email == body.email.strip().lower())).first()
     if not user or not verify_password(body.password, user.password_hash):
         ratelimit.record(fail_key)
         raise HTTPException(401, t("E-mail ou mot de passe incorrect", "Incorrect e-mail or password"))
@@ -195,6 +189,64 @@ def change_password(body: ChangePasswordIn, request: Request, response: Response
 @router.get("/me", response_model=UserOut)
 def me(user: User = Depends(current_user)):
     return user
+
+
+@router.patch("/me", response_model=UserOut)
+def update_me(body: UserUpdate, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Changer son nom d'utilisateur (affiché dans « Salut, … »)."""
+    user.name = _clean_name(body.name)
+    db.commit()
+    return user
+
+
+# ---------- Confirmation de l'adresse e-mail ----------
+@router.post("/verification/envoyer")
+def resend_verification(background: BackgroundTasks, user: User = Depends(current_user)):
+    if user.email_verified:
+        return {"sent": False, "already_verified": True}
+    if not _cooldown_ok("verify", user.email):
+        raise HTTPException(429, t("Un e-mail vient d'être envoyé. Patientez une minute avant d'en demander un autre.", "An email was just sent. Wait a minute before asking for another one."))
+    _send_verification(user, background)
+    return {"sent": True, "already_verified": False}
+
+
+@router.post("/verification")
+def verify_email(body: TokenIn, db: Session = Depends(get_db)):
+    user = read_link_token(body.token, "verify", db)
+    if user is None:
+        raise HTTPException(400, t("Ce lien de confirmation n'est plus valable. Connectez-vous et demandez-en un nouveau.", "This confirmation link is no longer valid. Sign in and ask for a new one."))
+    user.email_verified = True
+    _grant_admin(user)
+    db.commit()
+    return {"verified": True, "email": user.email}
+
+
+# ---------- Mot de passe oublié ----------
+@router.post("/mot-de-passe-oublie", dependencies=[Depends(limit("reset", 5, 3600))])
+def forgot_password(body: EmailIn, background: BackgroundTasks, db: Session = Depends(get_db)):
+    """Envoie un lien de réinitialisation. La réponse est la même que le compte existe ou non
+    (on ne révèle pas quelles adresses ont un compte)."""
+    email = body.email.strip().lower()
+    user = db.scalars(select(User).where(User.email == email)).first()
+    if user is not None and _cooldown_ok("reset", email):
+        s = get_settings()
+        link = f"{s.site_url.rstrip('/')}/reinitialiser?token={create_link_token(user, 'reset', s.reset_link_minutes)}"
+        subject, text, html = reset_email(user.display_name, link, s.reset_link_minutes, en=i18n.is_en())
+        background.add_task(send_mail, user.email, subject, text, html)
+    return {"sent": True}
+
+
+@router.post("/reinitialiser", response_model=TokenOut, dependencies=[Depends(limit("reset2", 20, 3600))])
+def reset_password(body: ResetIn, db: Session = Depends(get_db)):
+    user = read_link_token(body.token, "reset", db)
+    if user is None:
+        raise HTTPException(400, t("Ce lien n'est plus valable (expiré ou déjà utilisé). Demandez-en un nouveau.", "This link is no longer valid (expired or already used). Ask for a new one."))
+    _check_password(body.password, user.email)
+    user.password_hash = hash_password(body.password)
+    user.email_verified = True  # le lien a été ouvert depuis la boîte mail
+    _grant_admin(user)
+    db.commit()
+    return TokenOut(access_token=create_token(user), home=home_for(user))
 
 
 @router.delete("/me", status_code=204)

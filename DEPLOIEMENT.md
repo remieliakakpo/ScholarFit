@@ -98,7 +98,10 @@ Les clés se mettent dans `backend/.env` en local et dans les **Variables** de R
 - `RELIEFWEB_APPNAME` : nom d'application pour les stages des organisations internationales. Gratuit : formulaire sur apidoc.reliefweb.int, réponse par e-mail sous deux jours ouvrés. Mettre ensuite le nom reçu, exactement.
 - `AI_DISCOVERY_ENABLED` : mettre `false` si vous n'avez pas de crédit IA.
 - `CORS_ORIGINS` : adresse du site Vercel (voir parties 6 et 7).
-- `DATABASE_URL` : base de données (voir 6.5).
+- `DATABASE_URL` : base de données (voir 6.5). En ligne, PostgreSQL est obligatoire.
+- `SITE_URL` et `API_PUBLIC_URL` : adresses publiques du site et de l'API, en https (voir 8.1).
+- `PAYMENT_PROVIDER`, `CINETPAY_APIKEY`, `CINETPAY_SITE_ID`, `CINETPAY_SECRET_KEY` : paiement en ligne (voir 8.3).
+- `EMAIL_BACKEND`, `SMTP_FROM`, `BREVO_API_KEY` : envoi des e-mails (voir 8.4).
 
 Si vous avez perdu votre `.env`, rien de grave : on recrée la clé secrète, la clé IA et le nom ReliefWeb. Seuls les comptes de test d'une base locale sont perdus. Sans aucune clé IA, le site fonctionne en mode hors-ligne (règles et modèles), sans génération IA de CV, lettres, diagnostics ni découverte de bourses par IA.
 
@@ -110,7 +113,7 @@ Si vous avez perdu votre `.env`, rien de grave : on recrée la clé secrète, la
 ### 6.2 Réglages indispensables
 1. **Settings > Source > Root Directory** = `backend`. Sans cela, Railway lance le `start.sh` de la racine, fait pour votre ordinateur, et les logs répètent `start.sh: line 7: python3: command not found` (redémarrages en boucle, statut « Crashed »).
 2. **Settings > Deploy > Start Command** : laissez vide. Le `Dockerfile` du dossier `backend` contient déjà la bonne commande.
-3. **Variables** : ajoutez `SECRET_KEY`, `PORT` = `8000`, et selon le cas `ANTHROPIC_API_KEY`, `RELIEFWEB_APPNAME`, `AI_DISCOVERY_ENABLED`. Le champ de gauche est le **nom**, celui de droite la **valeur**. Ne pas les inverser (exemple d'erreur vécue : « Domaine » écrit dans le champ du nom au lieu de `CORS_ORIGINS`).
+3. **Variables** : ajoutez `APP_ENV` = `production`, `SECRET_KEY`, `PORT` = `8000`, et selon le cas `ANTHROPIC_API_KEY`, `RELIEFWEB_APPNAME`, `AI_DISCOVERY_ENABLED`. Le champ de gauche est le **nom**, celui de droite la **valeur**. Ne pas les inverser (exemple d'erreur vécue : « Domaine » écrit dans le champ du nom au lieu de `CORS_ORIGINS`).
 4. **Settings > Networking** : cliquez Generate Domain. Vérifiez que le port du domaine est `8000`.
 
 ### 6.3 Vérifier
@@ -123,13 +126,24 @@ Dans les **Deploy Logs**, cherchez `Uvicorn running on http://0.0.0.0:8000` et `
 | `start.sh: line 7: python3: command not found`, boucle de redémarrage | Mauvais dossier déployé | Root Directory = `backend`, Start Command vide |
 | « Application failed to respond » dans le navigateur | Le domaine vise un mauvais port | Variable `PORT=8000` et port du domaine sur 8000, attendre le redéploiement |
 | Erreur 400 « Your credit balance is too low » dans les logs | La clé est valide mais le compte Anthropic n'a plus de crédit | Acheter du crédit (console.anthropic.com > Plans & Billing) ou mettre `AI_DISCOVERY_ENABLED=false`. Ce n'est pas bloquant : le site marche sans IA |
-| « 0 bourse(s) proposée(s) » pour chaque zone | Même cause (découverte par IA sans crédit) | Idem. Les 98 bourses de départ et les sites d'annonces restent chargés |
+| « 0 bourse(s) proposée(s) » pour chaque zone | Même cause (découverte par IA sans crédit) | Idem. Les 133 fiches de départ et les sites d'annonces restent chargées |
 
 ### 6.5 Base de données durable
 Par défaut, la base est un fichier SQLite dans le conteneur : elle est effacée à chaque redéploiement, donc comptes et dossiers aussi. Pour la conserver : dans Railway, New > Database > PostgreSQL, puis copiez son lien de connexion dans la variable `DATABASE_URL` du serveur (au format `postgresql+psycopg://...`). Le Dockerfile installe déjà le pilote Postgres.
 
-### 6.6 Sécurité après le premier démarrage
-Les comptes de démonstration (`admin@example.org`, `demo@example.org`, `conseiller@example.org`) ont des mots de passe écrits dans le code et donc publics. Avant de partager le site : changez-les ou supprimez-les, et définissez `ADMIN_EMAILS` avec votre vraie adresse.
+### 6.6 Sécurité après le premier démarrage (version définitive du 27/11/2026)
+Le serveur se met tout seul en **mode production** dès que la base est PostgreSQL ou que la variable `APP_ENV=production` est présente. Ajoutez quand même `APP_ENV=production` dans Railway > Variables. En mode production :
+- les comptes de démonstration (`admin@example.org`, `demo@example.org`, `conseiller@example.org`) sont **désactivés automatiquement** à chaque démarrage (mot de passe remplacé, droits retirés) ;
+- si `SECRET_KEY` n'est pas défini, une clé aléatoire est créée et gardée dans la base (table `app_settings`) : les sessions restent valides d'un redéploiement à l'autre ;
+- si `PAYMENT_PROVIDER` vaut encore `simulation`, le site passe en **paiement manuel** (validation dans /admin) au lieu d'accepter des paiements factices ;
+- les droits d'administrateur ne sont donnés qu'à une adresse listée dans `ADMIN_EMAILS` **et confirmée** par e-mail ;
+- les connexions, inscriptions et demandes de mot de passe oublié sont limitées (protection contre les robots).
+
+**Devenir administrateur** : inscrivez-vous sur le site avec votre vraie adresse, puis dans Railway > service backend > onglet **Shell** :
+```
+python -m app.cli make-admin votre.adresse@gmail.com
+```
+Ajoutez aussi cette adresse dans `ADMIN_EMAILS`. Pour que les e-mails de confirmation et de mot de passe oublié partent vraiment, ajoutez `SITE_URL` (adresse publique du site) et `EMAIL_BACKEND` / `BREVO_API_KEY` ou les variables `SMTP_*` (voir 8.4).
 
 ## 7. Déployer le site sur Vercel
 
@@ -151,15 +165,107 @@ Les comptes de démonstration (`admin@example.org`, `demo@example.org`, `conseil
 | « Le serveur de ScholarFit ne répond pas » sur la page de connexion | Le site n'atteint pas le backend | Tester `/docs` sur Railway ; vérifier les deux variables Vercel ; Redeploy sans cache |
 | Page qui charge mais données vides ou erreurs réseau | `CORS_ORIGINS` absent ou faux | Mettre l'adresse exacte du site Vercel dans Railway |
 
-## 8. Test final
+## 8. Avant d'ouvrir le site au public
+
+Une commande fait le tour de tous les réglages et dit ce qui manque. Dans Railway : service backend > ⋯ > **Shell** (ou en local, avec le `.env` de production) :
+
+```
+python -m app.cli check-config
+```
+
+Chaque ligne `[BLOQUANT]` doit être corrigée avant d'annoncer le site. Les lignes `[CONSEIL]` sont facultatives. Au démarrage, l'API écrit aussi ces avertissements dans les Deploy Logs tant qu'ils ne sont pas réglés.
+
+### 8.1 Nom de domaine et HTTPS
+1. Achetez un nom de domaine (par exemple `scholarfit.tg` ou `scholarfit.org`) chez un registraire (OVH, Namecheap, Gandi…).
+2. **Site** : Vercel > projet > Settings > Domains > Add, tapez `www.votre-domaine.org`. Vercel affiche l'enregistrement DNS à créer chez le registraire (un `CNAME` vers `cname.vercel-dns.com`). Ajoutez aussi le domaine nu `votre-domaine.org`, Vercel le redirige vers `www`.
+3. **API** : Railway > service backend > Settings > Networking > Custom Domain, tapez `api.votre-domaine.org` et créez le `CNAME` indiqué.
+4. Le certificat HTTPS est fourni et renouvelé automatiquement par Vercel et Railway (quelques minutes après la mise à jour du DNS). Rien à installer.
+5. Variables à mettre à jour ensuite :
+   - Railway : `SITE_URL=https://www.votre-domaine.org`, `API_PUBLIC_URL=https://api.votre-domaine.org`, `CORS_ORIGINS=https://www.votre-domaine.org`
+   - Vercel : `API_URL_INTERNAL` et `NEXT_PUBLIC_API_URL` = `https://api.votre-domaine.org`, `NEXT_PUBLIC_SITE_URL=https://www.votre-domaine.org`, puis Redeploy.
+
+### 8.2 Base PostgreSQL et sauvegardes
+1. Railway : New > Database > PostgreSQL. Copiez son lien de connexion (`DATABASE_URL` du service PostgreSQL) dans la variable `DATABASE_URL` du backend, tel quel.
+2. Les tables sont créées au premier démarrage. Les nouvelles colonnes des versions suivantes sont ajoutées automatiquement.
+3. **Sauvegardes** : Railway > PostgreSQL > Backups (sauvegardes automatiques selon votre offre). En plus, une sauvegarde portable se fait depuis votre ordinateur, une fois par semaine, avec le `DATABASE_URL` de production dans `backend/.env` :
+   ```
+   python -m app.cli backup --dir sauvegardes
+   ```
+   Le fichier `sauvegardes/scholarfit-AAAAMMJJ-HHMM.json.gz` contient toutes les tables ; les 14 dernières sont gardées. Rangez-le aussi sur un disque ou un Drive.
+
+### 8.3 Paiement en ligne avec CinetPay
+1. Créez un compte marchand sur cinetpay.com (pièces de l'entreprise demandées, validation en quelques jours).
+2. Tableau de bord CinetPay > **Intégrations** : notez l'`API KEY`, le `SITE ID` et la `SECRET KEY`.
+3. Railway > Variables :
+   - `PAYMENT_PROVIDER=cinetpay`
+   - `CINETPAY_APIKEY`, `CINETPAY_SITE_ID`, `CINETPAY_SECRET_KEY`
+   - `API_PUBLIC_URL` doit être l'adresse https de l'API : CinetPay y envoie la confirmation de chaque paiement (`/api/payments/cinetpay/notify`).
+4. Rien à déclarer chez CinetPay : l'adresse de notification et l'adresse de retour sont envoyées avec chaque paiement.
+5. **Essai réel** : payez un abonnement de 2 500 F CFA avec votre propre numéro. La page « Paiement confirmé » s'affiche, le reçu arrive par e-mail et le paiement apparaît dans /admin > Paiements en ligne.
+
+Ce qui se paie en ligne : l'abonnement CV et lettres (2 500 F CFA par mois) et les offres d'accompagnement Standard (15 000 F CFA) et Premium (35 000 F CFA). Le paiement par transfert sur vos numéros Flooz et Mixx by Yas reste proposé en dessous, avec validation manuelle dans /admin.
+
+En local, `PAYMENT_PROVIDER=simulation` (valeur par défaut) affiche un guichet d'essai : on peut tester tout le parcours sans argent. Avec `PAYMENT_PROVIDER=manuel`, seul le paiement par transfert est proposé.
+
+Si un candidat ferme la page avant le retour, rien n'est perdu : l'API revérifie toutes les 15 minutes les paiements CinetPay restés en attente et active l'accès dès qu'ils sont confirmés.
+
+### 8.4 E-mails (compte, rappels, reçus, accompagnement)
+Le site envoie : la confirmation de l'adresse et le lien « mot de passe oublié », les rappels avant les dates limites (J-30, J-14, J-7, J-3, J-1), les nouvelles bourses qui correspondent au profil (un seul e-mail groupé), les reçus de paiement et les messages d'accompagnement (au plus un e-mail toutes les 30 minutes par personne).
+
+Le plus simple est **Brevo** (gratuit jusqu'à 300 e-mails par jour) :
+1. Créez un compte sur brevo.com, puis Senders, Domains & Dedicated IPs > Domains > ajoutez votre domaine et créez chez le registraire les enregistrements DNS indiqués (DKIM, DMARC). Sans cette étape, les e-mails partent en indésirables.
+2. SMTP & API > API Keys > Generate a new API key.
+3. Railway > Variables : `EMAIL_BACKEND=brevo`, `BREVO_API_KEY=…`, `SMTP_FROM=ScholarFit <no-reply@votre-domaine.org>`, `EMAIL_REPLY_TO=contact@votre-domaine.org`.
+4. Essai : `python -m app.cli test-email votre.adresse@gmail.com`.
+
+Autres possibilités : `EMAIL_BACKEND=resend` avec `RESEND_API_KEY`, ou le SMTP de votre choix avec `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` (Gmail : mot de passe d'application, port 587). Sans aucun réglage, les e-mails et leurs liens s'affichent dans la fenêtre de l'API, ce qui suffit en local. Dans tous les cas, l'expéditeur est `SMTP_FROM`.
+
+Chaque envoi est enregistré dans la table `email_log` (date, destinataire, objet, succès ou erreur).
+
+### 8.5 Collecte hebdomadaire
+Rien à planifier : l'API relance la collecte toutes les 24 heures (`AUTO_COLLECT_HOURS=24`) et chaque source n'est relue qu'une fois par semaine. Chaque passage retire les offres expirées, teste les liens officiels (une offre dont le lien est mort disparaît du site et apparaît dans /admin > Liens cassés), envoie les rappels et revérifie les paiements.
+
+Avec plusieurs copies de l'API, laissez `AUTO_COLLECT_HOURS=24` sur une seule et mettez `0` sur les autres.
+
+### 8.6 Pages légales et référencement
+- Renseignez dans Vercel `NEXT_PUBLIC_COMPANY_NAME`, `NEXT_PUBLIC_COMPANY_ADDRESS`, `NEXT_PUBLIC_CONTACT_EMAIL` et `NEXT_PUBLIC_CONTACT_PHONE` : ils s'affichent dans À propos, Conditions d'utilisation et Confidentialité.
+- Relisez `/conditions` (en particulier la règle de remboursement) et `/confidentialite`, puis faites-les valider si possible par un juriste.
+- Google Search Console : ajoutez le domaine, puis Sitemaps > `https://www.votre-domaine.org/sitemap.xml`. Le plan liste les pages pays (`/destinations/france`, `/destinations/france/bourses`…) et toutes les fiches.
+
+### 8.7 Comptes de démonstration
+En ligne, ils sont désactivés automatiquement (voir 6.6). Mettez tout de même `DEMO_ACCOUNTS=false` et votre adresse dans `ADMIN_EMAILS`. `python -m app.cli check-config` signale les réglages qui manquent encore.
+
+### 8.8 Suivi des erreurs et disponibilité (facultatif, gratuit)
+- **Erreurs** : créez un projet gratuit sur sentry.io (type « FastAPI »), copiez son DSN dans la variable Railway `SENTRY_DSN`. Chaque erreur du serveur vous est alors envoyée par e-mail avec son détail.
+- **Disponibilité** : sur uptimerobot.com (gratuit), ajoutez une surveillance HTTP de `https://VOTRE-DOMAINE.up.railway.app/api/health` toutes les 5 minutes. Vous recevez un e-mail si le site tombe.
+
+## 8 bis. Entretien du site : ce que vous faites, et quand
+
+| Quand | Quoi | Où |
+|---|---|---|
+| Chaque semaine (10 min) | Ouvrir **/admin > Fiches à relire** : publier ou rejeter les bourses trouvées par la collecte. Rien n'est visible par les étudiants avant votre validation. | Site, compte admin |
+| Chaque semaine | Cliquer **Télécharger une sauvegarde de la base** (en haut de /admin) et ranger le fichier sur un Drive. | Site, compte admin |
+| Chaque mois (30 min) | Vérifier 10 à 15 grandes bourses (dates, montants, lien) sur leur site officiel et les corriger dans /admin. Une fiche corrigée passe « vérifiée » et n'est plus écrasée par les mises à jour. | Site, compte admin |
+| Chaque mois | Valider les paiements manuels en attente et regarder les avis des accompagnements. | /admin |
+| Après chaque nouvelle version | Remplacer le code, pousser sur GitHub, attendre Railway et Vercel, puis ouvrir `/api/health` et vérifier `"version": "2026-11-27b"` (ou plus récent). | GitHub, Railway, Vercel |
+| Si un e-mail Sentry ou UptimeRobot arrive | Ouvrir les Deploy Logs Railway, puis la check-list de la section 10. | Railway |
+
+**Dates des bourses** : tant qu'une fiche n'est pas vérifiée, sa date est une estimation d'après la session précédente. Le site l'affiche honnêtement (« Attendue vers janvier 2027 (à confirmer) ») et ne la présente jamais comme une date exacte. Dès que vous corrigez la date dans /admin, elle s'affiche normalement avec le compte à rebours.
+
+### Grande échelle
+Le site tient sans changement quelques milliers d'inscrits. Au-delà (ou si les pages deviennent lentes) : passer le service Railway à 2 Go de mémoire, garder PostgreSQL, et lancer la collecte dans un second service Railway (même dépôt, Start Command `python -m app.cli nightly` en tâche planifiée « Cron » une fois par jour) avec `AUTO_COLLECT_HOURS=0` sur le service principal, pour que la collecte ne ralentisse pas le site.
+
+## 9. Test final
 
 1. Ouvrez l'adresse Vercel : la page d'accueil s'affiche.
-2. La liste des bourses se remplit (98 au départ, plus la collecte automatique).
+2. La liste des bourses se remplit (133 au départ, plus la collecte automatique).
 3. Créez un compte et connectez-vous.
 4. Les fonctions IA (CV, lettres, compatibilité) ne marchent que si la clé IA est valide **et** le compte a du crédit ; sinon le site utilise le mode hors-ligne.
 5. Les stages des organisations internationales apparaissent après l'ajout de `RELIEFWEB_APPNAME`.
+6. Payez un abonnement : la page « Paiement confirmé » s'affiche et le reçu arrive par e-mail.
+7. Ouvrez `/destinations`, `/conditions`, `/confidentialite`, `/sitemap.xml` et `/robots.txt`.
 
-## 9. Check-list rapide en cas de problème
+## 10. Check-list rapide en cas de problème
 
 1. Railway : le dernier déploiement est-il « Active » ? Que disent les Deploy Logs ?
 2. `https://VOTRE-DOMAINE.up.railway.app/docs` s'affiche-t-il ?
@@ -167,3 +273,5 @@ Les comptes de démonstration (`admin@example.org`, `demo@example.org`, `conseil
 4. Vercel : Root Directory = `frontend`, variables `API_URL_INTERNAL` et `NEXT_PUBLIC_API_URL` correctes, Redeploy fait.
 5. Railway : `CORS_ORIGINS` = adresse du site Vercel.
 6. Git : `git remote -v` montre-t-il le bon dépôt ? Le dernier `git push` a-t-il réussi ?
+7. **Railway est-il à jour ?** Ouvrez `https://VOTRE-DOMAINE.up.railway.app/api/health`. La réponse doit contenir `"version": "2026-11-27b"` (ou plus récent). Si `version` est absent, Railway fait tourner un ancien backend : c'est ce qui donne « Not Found » sur « Renvoyer le lien », « Salut, » sans prénom et, avant le correctif du 27/11, l'écran « Application error » sur /profil. Vérifiez que le dossier `backend` a bien été poussé sur GitHub, que Railway suit la bonne branche (Settings > Source) et que le dernier déploiement n'a pas échoué (onglet Deployments), puis Redeploy.
+8. **Aucun e-mail reçu ?** Sans `EMAIL_BACKEND` / `BREVO_API_KEY` (ou `SMTP_*`) dans Railway, rien ne part : les liens sont seulement écrits dans les Deploy Logs. Sans domaine à vous, Brevo accepte une adresse d'expéditeur vérifiée (Senders > Add a sender, par exemple votre Gmail) : mettez cette adresse exacte dans `SMTP_FROM`. Essai : Railway > service backend > Shell > `python -m app.cli test-email votre.adresse@gmail.com`.

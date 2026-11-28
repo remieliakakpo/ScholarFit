@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -17,7 +17,7 @@ from .. import i18n, offers
 from ..db import get_db
 from ..geo import REGIONS, region_of
 from ..i18n import t
-from ..matching import SITUATION_LABELS, Criteria, age_on, missing_minimum, rank, situation_labels
+from ..matching import SITUATION_LABELS, Criteria, age_on, missing_minimum, next_session, rank, situation_labels, widen_hint
 from ..models import Profile, Scholarship, User
 from ..schemas import MatchOut
 from ..security import optional_user
@@ -117,8 +117,8 @@ def steps() -> list[dict]:
             "subtitle": t("Pour vous montrer les bourses réservées et l'offre qui vous convient.",
                           "To show you reserved scholarships and the option that suits you."),
             "questions": [
-                {"id": "situations", "label": t("Ces situations vous concernent-elles ? (facultatif : en cochant, vous acceptez qu'elles servent uniquement à trouver les bourses qui vous sont réservées ; elles restent privées)",
-                                                "Do any of these apply to you? (optional: by ticking, you agree they are used only to find scholarships reserved for you; they stay private)"), "type": "multiselect",
+                {"id": "situations", "label": t("Ces situations vous concernent-elles ? (facultatif, reste privé)",
+                                                "Do any of these apply to you? (optional, kept private)"), "type": "multiselect",
                  "required": False, "options": _opts(situation_labels())},
                 {"id": "applications_planned", "label": t("À combien de bourses souhaitez-vous postuler ?",
                                                           "How many scholarships would you like to apply for?"),
@@ -136,15 +136,6 @@ def steps() -> list[dict]:
 class QuestionnaireIn(BaseModel):
     answers: dict
 
-    @field_validator("answers")
-    @classmethod
-    def _size(cls, v: dict) -> dict:
-        import json
-
-        if len(v) > 60 or len(json.dumps(v, ensure_ascii=False, default=str)) > 20_000:
-            raise ValueError("réponses trop longues")
-        return v
-
 
 class QuestionnaireOut(BaseModel):
     total_matches: int
@@ -158,6 +149,8 @@ class QuestionnaireOut(BaseModel):
     offers: list[dict]
     profile_saved: bool
     missing: list[str]
+    next_session: list[MatchOut] = []
+    widen_hint: str | None = None
 
 
 def _clean(a: dict) -> dict:
@@ -238,7 +231,6 @@ def submit(body: QuestionnaireIn, kind: str = Query("bourse", pattern=KIND_OR_AL
         user.profile = p
         for k, v in data.items():
             setattr(p, k, v)
-        p.sync_sensitive_consent()
         p.questionnaire_done_at = datetime.now(timezone.utc)
         db.commit()
         c = Criteria.from_profile(p, today)
@@ -275,6 +267,7 @@ def submit(body: QuestionnaireIn, kind: str = Query("bourse", pattern=KIND_OR_AL
         total_matches=len(results), destination_total=destination_total, has_destination=bool(dest), excluded_count=excluded, items=items, recommended_offer=rec,
         offers=[{**o, "recommended": o["code"] == rec} for o in offers.catalog()],
         profile_saved=user is not None, missing=missing_minimum(c),
+        next_session=later, widen_hint=widen_hint(destination_total if dest else len(results), c),
     )
 
 

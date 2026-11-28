@@ -85,6 +85,8 @@ def search(db: Session, *, today: date | None = None, q: str | None = None, kind
         items = [s for s in items if info[s.id].status in wanted]
     elif not include_expired:
         items = [s for s in items if info[s.id].status != "expiree"]
+    # Lien officiel mort (404, domaine disparu) : l'offre est retirée du site jusqu'à sa correction dans /admin
+    items = [s for s in items if s.link_status != "casse"]
     if region:
         zone = countries_in(region)
         items = [s for s in items if set(s.study_countries or []) & zone]
@@ -166,6 +168,8 @@ def stats_countries(include_expired: bool = False, kind: str | None = Query(None
         return []
     stmt = select(Scholarship).where(Scholarship.kind == kind) if kind else select(Scholarship).where(Scholarship.kind.in_(shown))
     for s in db.scalars(stmt):
+        if s.link_status == "casse":
+            continue
         open_ = deadline_info(s, today).status != "expiree"
         if not include_expired and not open_:
             continue

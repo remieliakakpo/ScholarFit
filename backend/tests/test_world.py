@@ -5,7 +5,7 @@ import httpx
 
 from app.deadlines import deadline_info
 from app.models import Scholarship
-from tests.conftest import register, login
+from tests.conftest import login
 
 
 def _s(**kw) -> Scholarship:
@@ -79,7 +79,8 @@ def test_questionnaire_anonymous_and_logged(client):
     assert anon["total_matches"] > 3 and len(anon["items"]) == 3
     assert all(i["score"] is None for i in anon["items"]) and anon["profile_saved"] is False
     assert anon["recommended_offer"] == "premium"  # 4 bourses visées
-    h = register(client, "quiz@example.org")
+    r = client.post("/api/auth/register", json={"email": "quiz@example.org", "password": "motdepasse1"})
+    h = {"Authorization": f"Bearer {r.json()['access_token']}"}
     res = client.post("/api/questionnaire", headers=h, json={"answers": answers}).json()
     assert res["profile_saved"] and res["total_matches"] == anon["total_matches"]
     assert all(isinstance(i["score"], int) for i in res["items"])
@@ -156,54 +157,45 @@ def test_ai_discovery_keeps_only_live_links(client, monkeypatch):
         assert created == 1
     finally:
         db.close()
+    # trouvée par l'IA : en attente de relecture, invisible du public tant qu'un administrateur ne l'a pas publiée
+    assert client.get("/api/scholarships", params={"q": "Océanie"}).json()["total"] == 0
+    adm = login(client, "admin@example.org", "admin12345")
+    queue = [x for x in client.get("/api/admin/relecture", headers=adm).json() if "Océanie" in x["title"]]
+    assert len(queue) == 1 and queue[0]["review"] == "a_relire"
+    assert client.post(f"/api/admin/relecture/{queue[0]['id']}", headers=adm, json={"decision": "publie"}).status_code == 200
     r = client.get("/api/scholarships", params={"q": "Océanie"}).json()
     assert r["total"] == 1 and r["items"][0]["status"] == "a_verifier" and r["items"][0]["link_status"] == "ok"
     assert client.get("/api/scholarships", params={"q": "lien mort"}).json()["total"] == 0
 
 
 def test_old_database_gets_new_columns(tmp_path):
-    """Une base créée avant Alembic reçoit les nouvelles colonnes au démarrage, puis est marquée
-    au niveau actuel des migrations ; une base neuve est créée par les migrations."""
+    """Une base créée avec l'ancienne version reçoit les nouvelles colonnes au démarrage."""
     import sqlalchemy as sa
 
     from app import db as dbmod
 
+    path = tmp_path / "ancienne.db"
+    eng = sa.create_engine(f"sqlite:///{path}")
+    with eng.begin() as c:
+        c.execute(sa.text("CREATE TABLE scholarships (id INTEGER PRIMARY KEY, slug VARCHAR(200), title VARCHAR(300))"))
     old = dbmod.engine
+    dbmod.engine = eng
     try:
-        eng = sa.create_engine(f"sqlite:///{tmp_path / 'ancienne.db'}")
-        with eng.begin() as c:
-            c.execute(sa.text("CREATE TABLE users (id INTEGER PRIMARY KEY, email VARCHAR(320), password_hash VARCHAR(300))"))
-            c.execute(sa.text("CREATE TABLE scholarships (id INTEGER PRIMARY KEY, slug VARCHAR(200), title VARCHAR(300))"))
-            c.execute(sa.text("INSERT INTO users (id, email, password_hash) VALUES (1, 'a@example.org', 'x')"))
-        dbmod.engine = eng
-        dbmod.init_db()
-        insp = sa.inspect(eng)
-        cols = {c["name"] for c in insp.get_columns("scholarships")}
-        assert {"eligibility", "link_status", "deadline_estimated", "apply_via"} <= cols
-        assert {"email_verified_at", "token_version"} <= {c["name"] for c in insp.get_columns("users")}
-        assert insp.has_table("alembic_version") and insp.has_table("coachings")
-        with eng.connect() as c:
-            assert c.execute(sa.text("SELECT email FROM users")).scalar() == "a@example.org"
-        eng.dispose()
-
-        neuve = sa.create_engine(f"sqlite:///{tmp_path / 'neuve.db'}")
-        dbmod.engine = neuve
-        dbmod.init_db()
-        dbmod.init_db()  # deuxième démarrage : rien à faire
-        assert sa.inspect(neuve).has_table("users")
-        neuve.dispose()
+        dbmod._add_missing_columns()
     finally:
         dbmod.engine = old
+    cols = {c["name"] for c in sa.inspect(eng).get_columns("scholarships")}
+    assert {"eligibility", "link_status", "deadline_estimated", "apply_via"} <= cols
 
 
 def test_register_rules(client):
-    weak = client.post("/api/auth/register", json={"email": "faible@example.org", "password": "abcdefgh", "accept_terms": True})
+    weak = client.post("/api/auth/register", json={"email": "faible@example.org", "password": "abcdefgh"})
     assert weak.status_code == 422 and "chiffre" in weak.json()["detail"]
     assert client.get("/api/auth/email-disponible", params={"email": "Demo@Example.org "}).json()["available"] is False
-    r = client.post("/api/auth/register", json={"email": " Majuscules@Example.org", "password": "motdepasse1", "accept_terms": True})
+    r = client.post("/api/auth/register", json={"email": " Majuscules@Example.org", "password": "motdepasse1"})
     assert r.status_code == 201
     assert client.post("/api/auth/login", json={"email": "majuscules@example.org", "password": "motdepasse1"}).status_code == 200
-    dup = client.post("/api/auth/register", json={"email": "majuscules@example.org", "password": "motdepasse1", "accept_terms": True})
+    dup = client.post("/api/auth/register", json={"email": "majuscules@example.org", "password": "motdepasse1"})
     assert dup.status_code == 409
 
 
@@ -277,6 +269,9 @@ def test_aggregator_site_connector(client, monkeypatch):
         assert collector.run_source(db, "Afri-Carrières").startswith("ok : 2 nouvelle")
     finally:
         db.close()
+    adm = login(client, "admin@example.org", "admin12345")
+    for x in client.get("/api/admin/relecture", headers=adm).json():
+        client.post(f"/api/admin/relecture/{x['id']}", headers=adm, json={"decision": "publie"})
     b = client.get("/api/scholarships", params={"q": "master en Suède pour Africains"}).json()["items"][0]
     assert b["kind"] == "bourse" and b["official_url"] == "https://si.se/apply" and b["source_page"].startswith("https://afri-carrieres.com/")
     s = client.get("/api/scholarships", params={"kind": "stage", "q": "Banque mondiale 2027"}).json()["items"][0]
@@ -293,3 +288,16 @@ def test_country_exact_matches_stats(client):
     loose = client.get("/api/scholarships", params={"country": "GH", "kind": "bourse"}).json()["total"]
     exact = client.get("/api/scholarships", params={"country": "GH", "kind": "bourse", "country_exact": True}).json()["total"]
     assert loose >= exact
+
+
+def test_experience_estimate_and_requirement():
+    from datetime import date
+    from app.matching import Criteria, estimate_experience_years, score
+    from app.models import Scholarship
+    cv = "EXPÉRIENCES\nOct 2024 - Aujourd'hui Développeur, Togo Data Lab\nJuin 2023 - Sept 2023 Assistant, Mairie\nFORMATION\n2019 - 2022 Licence"
+    years = estimate_experience_years(cv, date(2026, 11, 27))
+    assert years is not None and 2.0 <= years <= 2.5
+    s = Scholarship(title="X", summary="", levels=["BAC5"], study_countries=["GB"], domains=["tous"], languages=["en"], min_experience_years=3,
+                    recurring=True, eligibility=[], target_groups=[], language_tests={}, requirements=[])
+    m = score(s, Criteria(target_level="BAC5", experience_years=years), date(2026, 11, 27))
+    assert m.chance != "bonne" and any("expérience professionnelle" in g for g in m.gaps)

@@ -1,8 +1,6 @@
-from datetime import date, datetime, timezone
-import json
+from datetime import date
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
-from sqlalchemy import inspect as sa_inspect
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -109,7 +107,6 @@ def update_profile(body: ProfileIn, user: User = Depends(current_user), db: Sess
         raise HTTPException(422, "Date de naissance dans le futur")
     for k, v in data.items():
         setattr(p, k, v)
-    p.sync_sensitive_consent()
     db.commit()
     return profile_out(p)
 
@@ -122,11 +119,8 @@ async def upload_cv(file: UploadFile = File(...), user: User = Depends(current_u
         raise HTTPException(413, "Fichier trop lourd (5 Mo maximum)")
     try:
         text = extract_text(file.filename or "cv.txt", data)
-    except Exception as e:  # noqa: BLE001 - détail technique au journal, pas à l'utilisateur
-        import logging
-
-        logging.getLogger(__name__).info("CV illisible (utilisateur %s) : %s", user.id, e)
-        raise HTTPException(422, "Impossible de lire ce fichier. Essayez un PDF texte, un .docx ou un .txt.") from e
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(422, f"Impossible de lire ce fichier : {e}") from e
     if len(text) < 30:
         raise HTTPException(422, "Le fichier ne contient pas de texte lisible (CV scanné ?). Essaie un PDF texte ou un .docx.")
     p = get_profile(user, db)
@@ -142,6 +136,8 @@ async def upload_cv(file: UploadFile = File(...), user: User = Depends(current_u
         p.experiences = sections["experiences"][:2000]
     if not p.engagement and sections.get("engagement"):
         p.engagement = sections["engagement"][:1500]
+    if not p.interests and sections.get("centres_interet"):
+        p.interests = " ".join(sections["centres_interet"].split())[:500]
     if not p.language_scores and guessed.get("language_scores"):
         p.language_scores = guessed["language_scores"]
     db.commit()
@@ -161,5 +157,7 @@ def matches(limit: int = 30, kind: str = Query("bourse", pattern=KIND_OR_ALL_PAT
     stmt = select(Scholarship).where(Scholarship.status != "expiree")
     stmt = stmt.where(Scholarship.kind.in_(shown)) if kind == "tout" else stmt.where(Scholarship.kind == kind, Scholarship.kind.in_(shown))
     scholarships = list(db.scalars(stmt))
-    results, excluded = rank(scholarships, c, limit=limit)
-    return MatchesOut(minimum_ok=True, missing_minimum=[], excluded_count=excluded, items=[match_out(m) for m in results])
+    results, excluded = rank([s for s in scholarships if s.status != "expiree"], c, limit=limit)
+    later = next_session(scholarships, c)
+    return MatchesOut(minimum_ok=True, missing_minimum=[], excluded_count=excluded, items=[match_out(m) for m in results],
+                      next_session=[match_out(m) for m in later], widen_hint=widen_hint(len(results), c))

@@ -43,7 +43,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   const fd = (d: string | null) => formatDate(d, lang);
   const facts: [string, string, string][] = [
     ["medal", t("Financement"), formatAmount(s, lang)],
-    ["calendar", t("Date limite"), s.deadline ? fd(s.deadline) : t("Variable selon le programme")],
+    ["calendar", t("Date limite"), deadlineText(s, lang)],
     ["cap", t("Niveaux"), s.levels.map((l) => t(meta.levels[l] ?? l).split(" : ").pop()).join(" · ") || t("Non précisé")],
     ["globe", t("Pays d'études"), s.study_countries.map((c) => countryName(c, lang, meta.countries[c])).join(", ") || t("Plusieurs pays")],
   ];
@@ -157,7 +157,11 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
                 {t("Postuler")} <Icon name="arrow" className="h-4 w-4" />
               </Link>
             )}
-            {link && <p className={`mt-2 text-xs ${link.cls}`}>{t(link.t)}{s.link_checked_at ? ` · ${fd(s.link_checked_at)}` : ""}</p>}
+            {link && <p className={`mt-2 text-xs ${link.cls}`}>{t(link.t)}{s.link_checked_at ? ` · ${fd(s.link_checked_at.slice(0, 10))}` : ""}</p>}
+            {(() => {
+              const last = [s.verified_at, s.link_checked_at, s.collected_at].filter(Boolean).map((d) => (d as string).slice(0, 10)).sort().pop();
+              return last ? <p className="mt-1 text-[11px] text-muted">{t("Fiche mise à jour le {d}", { d: fd(last) })}</p> : null;
+            })()}
             <p className="mt-2 truncate text-[11px] text-muted" title={url}>{url.replace(/^https?:\/\//, "")}</p>
           </div>
           <div className="relative overflow-hidden rounded-2xl bg-night p-5 text-white">

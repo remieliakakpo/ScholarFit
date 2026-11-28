@@ -1,10 +1,12 @@
 from datetime import date, datetime, timedelta, timezone
 
-from tests.conftest import register, login
+from tests.conftest import login
 
 
 def _register(client, email):
-    return register(client, email)
+    r = client.post("/api/auth/register", json={"email": email, "password": "motdepasse1"})
+    assert r.status_code == 201, r.text
+    return {"Authorization": f"Bearer {r.json()['access_token']}"}
 
 
 def test_full_coaching_flow(client, demo):

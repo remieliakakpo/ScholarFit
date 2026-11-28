@@ -23,7 +23,7 @@ def test_scholarship_in_english(client):
     assert "Funded level" in notes and "Study in: France" in notes and "contact the international relations office" in notes
     assert all(d["label"] and not re.search(r"[éèà]", d["label"]) for d in s["documents"])
     assert s["application_steps"][0].startswith("Read the full call")
-    assert re.match(r"(Deadline|Urgent|Closes|Applications closed|Deadline passed|Deadline not published)", s["deadline_label"])
+    assert re.match(r"(Deadline|Urgent|Closes|Applications closed|Applications expected|Deadline passed|Deadline not published)", s["deadline_label"])
     detail = client.get(f"/api/scholarships/{s['slug']}", params={"lang": "en"}).json()
     assert detail["title"] == "Eiffel Excellence Scholarship"
 

@@ -11,6 +11,7 @@ from ..quota import can_use_ai
 from ..schemas import ChatIn, ChatOut, QuickReply
 from ..security import optional_user
 from ..serializers import match_out
+from ..visibility import public_filter
 
 router = APIRouter(prefix="/api", tags=["assistant"])
 ANONYMOUS_LIMIT = 3
@@ -42,7 +43,7 @@ def chat(body: ChatIn, user: User | None = Depends(optional_user), db: Session =
                        quick_replies=[QuickReply(**r) for r in replies], ai_used=ai_used)
 
     # Profil minimum connu : recherche dans NOTRE base (jamais de réponse de mémoire).
-    scholarships = list(db.scalars(select(Scholarship).where(Scholarship.status != "expiree", Scholarship.kind == "bourse")))
+    scholarships = list(db.scalars(select(Scholarship).where(public_filter(), Scholarship.status != "expiree", Scholarship.kind == "bourse")))
     results, excluded = rank(scholarships, Criteria.from_dict(criteria), limit=20)
 
     # Les critères donnés dans le chat remplissent le profil s'il est vide.

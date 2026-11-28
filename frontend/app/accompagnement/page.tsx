@@ -4,6 +4,7 @@ import { useSearchParams } from "next/navigation";
 import Offers from "@/components/Offers";
 import CoachingWorkspace from "@/components/CoachingWorkspace";
 import Icon from "@/components/Icon";
+import PayOnline from "@/components/PayOnline";
 import RequireAuth from "@/components/RequireAuth";
 import { Application, Coaching, CoachingDetail, CoachingMeta, DEFAULT_OFFERS, Offer, Scholarship, api, formatDate, getCoachingMeta, getOffers } from "@/lib/api";
 import { useT } from "@/components/LangProvider";
@@ -186,8 +187,8 @@ function Page() {
     setList((l) => l?.map((x) => (x.id === d.id ? { ...x, status: d.status, rating: d.rating, unread: 0 } : x)) ?? l);
   }, []);
 
-  if (error) return <p className="text-danger">{error}</p>;
-  if (!list || !cm) return <p className="text-muted">{t("Chargement…")}</p>;
+  if (error) return <div className="space-y-3"><h1 className="text-[1.65rem] sm:text-3xl">{t("Accompagnement")}</h1><p className="text-danger">{error}</p></div>;
+  if (!list || !cm) return <div className="space-y-3"><h1 className="text-[1.65rem] sm:text-3xl">{t("Accompagnement")}</h1><p className="text-muted">{t("Chargement…")}</p></div>;
 
   const current = list.find((c) => c.status === "demande" || c.status === "en_cours");
   const last = list[0];
@@ -209,6 +210,16 @@ function Page() {
                 if (!confirm(t("Annuler votre demande d'accompagnement ?"))) return;
                 await api(`/api/accompagnement/${current.id}/annuler`, { method: "POST" }); load();
               }}>{t("Annuler la demande")}</button>
+            </div>
+          )}
+          {current.payment_status === "a_payer" && current.price_label && current.price_label !== "Gratuit" && current.price_label !== "Free" && (
+            <div className="card grid gap-4 p-5 sm:grid-cols-[1fr_minmax(0,22rem)] sm:items-center sm:p-6">
+              <div>
+                <p className="eyebrow">{current.offer_name}</p>
+                <h2 className="mt-1 text-xl">{t("Réglez votre accompagnement pour que votre expert commence")}</h2>
+                <p className="mt-1 text-sm text-muted">{t("Votre expert commence la préparation de votre dossier dès la confirmation du paiement. Vous recevez un reçu par e-mail.")}</p>
+              </div>
+              <PayOnline purpose="accompagnement" coachingId={current.id} amountLabel={current.price_label} />
             </div>
           )}
           <CoachingWorkspace id={current.id} onChange={onChange} />

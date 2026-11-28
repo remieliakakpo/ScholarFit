@@ -7,8 +7,17 @@ from .config import get_settings
 
 settings = get_settings()
 
-connect_args = {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
-engine = create_engine(settings.database_url, connect_args=connect_args)
+def _normalize(url: str) -> str:
+    """Accepte le lien tel que Railway ou Render le donnent (postgres:// ou postgresql://)."""
+    for prefix in ("postgres://", "postgresql://"):
+        if url.startswith(prefix):
+            return "postgresql+psycopg://" + url[len(prefix):]
+    return url
+
+
+DATABASE_URL = _normalize(settings.database_url)
+connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+engine = create_engine(DATABASE_URL, connect_args=connect_args, pool_pre_ping=not DATABASE_URL.startswith("sqlite"))
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
 
@@ -25,61 +34,63 @@ def get_db() -> Iterator[Session]:
 
 
 def init_db() -> None:
-    """Met la base au niveau des migrations Alembic (dossier migrations/).
-
-    Une base créée avant Alembic (tables présentes, pas de table alembic_version) reçoit d'abord
-    les colonnes manquantes puis est marquée au niveau actuel, sans perdre de données."""
-    from pathlib import Path
-
-    from alembic import command
-    from alembic.config import Config
-    from sqlalchemy import inspect
-
     from . import models  # noqa: F401  (enregistre les tables)
 
-    cfg = Config(str(Path(__file__).resolve().parent.parent / "alembic.ini"))
+    Base.metadata.create_all(bind=engine)
+    _add_missing_columns()
+    _ensure_indexes()
+
+
+# Index utiles aux recherches les plus fréquentes, créés aussi sur une base déjà en ligne.
+INDEXES = (
+    ("ix_scholarships_deadline", "scholarships", "deadline"),
+    ("ix_scholarships_status", "scholarships", "status"),
+    ("ix_scholarships_kind_review", "scholarships", "kind, review"),
+)
+
+
+def _ensure_indexes() -> None:
+    from sqlalchemy import inspect, text
+
     insp = inspect(engine)
-    legacy = insp.has_table("users") and not insp.has_table("alembic_version")
+    if not insp.has_table("scholarships"):
+        return
     with engine.begin() as conn:
-        cfg.attributes["connection"] = conn
-        if legacy:
-            Base.metadata.create_all(bind=conn)
-            _add_missing_columns(conn)
-            command.stamp(cfg, "head")
-        else:
-            command.upgrade(cfg, "head")
+        for name, table, cols in INDEXES:
+            conn.execute(text(f"CREATE INDEX IF NOT EXISTS {name} ON {table} ({cols})"))
 
 
-def _add_missing_columns(conn) -> None:
-    """Reprise d'une base d'avant Alembic : ajoute les colonnes apparues depuis sa création
-    (create_all ne crée que les tables manquantes). Les évolutions suivantes passent par Alembic."""
+def _add_missing_columns() -> None:
+    """Mise à niveau légère d'une base existante : ajoute les colonnes apparues depuis sa création
+    (create_all ne crée que les tables manquantes). Pour la production : passer à Alembic."""
     import json
 
     from sqlalchemy import inspect, text
 
-    insp = inspect(conn)
-    for table in Base.metadata.sorted_tables:
-        if not insp.has_table(table.name):
-            continue
-        existing = {c["name"] for c in insp.get_columns(table.name)}
-        for col in table.columns:
-            if col.name in existing:
+    insp = inspect(engine)
+    with engine.begin() as conn:
+        for table in Base.metadata.sorted_tables:
+            if not insp.has_table(table.name):
                 continue
-            ddl_type = col.type.compile(dialect=engine.dialect)
-            default = ""
-            if col.default is not None and getattr(col.default, "is_scalar", False):
-                v = col.default.arg
-                if isinstance(v, bool):
-                    default = f" DEFAULT {'TRUE' if v else 'FALSE'}" if engine.dialect.name != "sqlite" else f" DEFAULT {int(v)}"
-                elif isinstance(v, (int, float)):
-                    default = f" DEFAULT {v}"
-                elif isinstance(v, str):
-                    default = " DEFAULT '" + v.replace("'", "''") + "'"
-            elif col.default is not None and getattr(col.default, "is_callable", False):
-                try:
-                    v = col.default.arg(None)
-                except Exception:  # noqa: BLE001 - ex. utcnow : pas de valeur par défaut en SQL
-                    v = None
-                if isinstance(v, (list, dict)):
-                    default = " DEFAULT '" + json.dumps(v) + "'"
-            conn.execute(text(f'ALTER TABLE {table.name} ADD COLUMN "{col.name}" {ddl_type}{default}'))
+            existing = {c["name"] for c in insp.get_columns(table.name)}
+            for col in table.columns:
+                if col.name in existing:
+                    continue
+                ddl_type = col.type.compile(dialect=engine.dialect)
+                default = ""
+                if col.default is not None and getattr(col.default, "is_scalar", False):
+                    v = col.default.arg
+                    if isinstance(v, bool):
+                        default = f" DEFAULT {'TRUE' if v else 'FALSE'}" if engine.dialect.name != "sqlite" else f" DEFAULT {int(v)}"
+                    elif isinstance(v, (int, float)):
+                        default = f" DEFAULT {v}"
+                    elif isinstance(v, str):
+                        default = " DEFAULT '" + v.replace("'", "''") + "'"
+                elif col.default is not None and getattr(col.default, "is_callable", False):
+                    try:
+                        v = col.default.arg(None)
+                    except Exception:  # noqa: BLE001 - ex. utcnow : pas de valeur par défaut en SQL
+                        v = None
+                    if isinstance(v, (list, dict)):
+                        default = " DEFAULT '" + json.dumps(v) + "'"
+                conn.execute(text(f'ALTER TABLE {table.name} ADD COLUMN "{col.name}" {ddl_type}{default}'))

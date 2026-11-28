@@ -258,6 +258,11 @@ function LetterTool({ id }: { id: string }) {
                 <button className="btn-ghost px-3 py-1.5 text-xs" onClick={() => download("docx")}>Word</button>
               </div>
               {editing && <p className="text-xs text-muted">{t("Cliquez sur un texte pour le modifier. Une ligne vide entre deux phrases crée un nouveau paragraphe.")}</p>}
+              {(letter.notes?.length ?? 0) > 0 && (
+                <ul className="space-y-1 rounded-xl border border-gold/40 bg-gold/10 p-3 text-xs">
+                  {letter.notes!.map((n) => <li key={n}>{n}</li>)}
+                </ul>
+              )}
               <div className="-mx-4 bg-surface/60 px-2 py-4 sm:mx-0 sm:rounded-2xl sm:p-6">
                 <PaperLetter letter={letter} editable={editing} onChange={(l) => { setLetter(l); setDirty(true); }} />
               </div>

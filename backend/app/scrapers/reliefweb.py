@@ -123,10 +123,7 @@ def run(db: Session, source: Source, cfg: dict) -> tuple[int, int]:
             continue
         if rec["deadline"] and rec["deadline"] < date.today():
             continue
-        try:
-            _, is_new = upsert(db, rec, source)
-        except ValueError:
-            continue
+        _, is_new = upsert(db, rec, source, review="publie")
         created += is_new
         updated += not is_new
     db.commit()

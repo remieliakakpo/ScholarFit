@@ -2,6 +2,7 @@
 import { useT } from "@/components/LangProvider";
 import { useState } from "react";
 import Icon from "@/components/Icon";
+import PayOnline from "@/components/PayOnline";
 import { Credits, PayMethod, docApi } from "@/lib/docs";
 import { api } from "@/lib/api";
 
@@ -92,6 +93,7 @@ export function PayModal({ credits, onClose, onDone }: { credits: Credits; onClo
         ) : (
           <>
             <p className="mt-2 text-sm text-muted">{t("Montant :")} <strong className="text-ink">{credits.price_label}</strong>. {t("Choisissez votre moyen de paiement.")}</p>
+            <PayOnline purpose="abonnement" amountLabel={credits.price_label} orTransfer className="mt-4" />
             <div className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-5">
               {credits.methods.map((m) => (
                 <button key={m.code} type="button" onClick={() => { setMethod(m); setCopied(false); }} aria-pressed={method.code === m.code}

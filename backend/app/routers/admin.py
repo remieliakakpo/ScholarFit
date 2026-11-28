@@ -35,6 +35,8 @@ def update(sid: int, body: ScholarshipIn, _: User = Depends(admin_user), db: Ses
         raise HTTPException(404, "Bourse introuvable")
     for k, v in body.model_dump().items():
         setattr(s, k, v)
+    s.edited_by_admin = True  # la fiche de départ ne l'écrasera plus
+    s.review = "publie"
     s.slug = slugify(s.title) if not db.scalars(select(Scholarship).where(Scholarship.slug == slugify(s.title), Scholarship.id != sid)).first() else s.slug
     s.verified_at = datetime.now(timezone.utc)
     db.commit()
@@ -48,6 +50,8 @@ def verify(sid: int, _: User = Depends(admin_user), db: Session = Depends(get_db
         raise HTTPException(404, "Bourse introuvable")
     s.status = "active"
     s.deadline_estimated = False  # la date a été confirmée sur le site officiel
+    s.edited_by_admin = True
+    s.review = "publie"
     s.verified_at = datetime.now(timezone.utc)
     db.commit()
     return scholarship_out(s)
@@ -103,15 +107,8 @@ def run(name: str, _: User = Depends(admin_user), db: Session = Depends(get_db))
 
 
 class ExtractIn(BaseModel):
-    url: str = Field(max_length=2000)
+    url: str
     save: bool = False
-
-    @field_validator("url")
-    @classmethod
-    def _http(cls, v: str) -> str:
-        from ..netguard import http_url
-
-        return http_url(v) or ""
 
 
 @router.post("/extract")
@@ -131,10 +128,7 @@ def extract_url(body: ExtractIn, _: User = Depends(admin_user), db: Session = De
         return {"is_scholarship": False}
     if body.save:
         record["organization"] = record.get("organization") or "À compléter"
-        try:
-            s, _new = upsert(db, record, source=None)
-        except ValueError as e:
-            raise HTTPException(422, f"Fiche non enregistrée : {e}") from e
+        s, _new = upsert(db, record, source=None)
         db.commit()
         return {"is_scholarship": True, "saved_id": s.id, "record": record}
     return {"is_scholarship": True, "record": record}

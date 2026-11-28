@@ -1,6 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
 import AdminCoaching from "@/components/AdminCoaching";
+import AdminPayments from "@/components/AdminPayments";
+import AdminReview from "@/components/AdminReview";
 import AdminCredits from "@/components/docs/AdminCredits";
 import { AdminAICosts, AdminAudit, AdminReports } from "@/components/AdminMonitoring";
 import AdminKinds from "@/components/AdminKinds";
@@ -72,6 +74,7 @@ function Admin() {
       <AdminKinds />
       <AdminReports />
       <AdminCoaching meta={meta} />
+      <AdminPayments />
       <AdminCredits />
       <AdminAICosts />
       <AdminAudit />

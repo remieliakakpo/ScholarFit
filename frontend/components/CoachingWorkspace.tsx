@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DeadlineBadge } from "@/components/ScholarshipCard";
 import { useT } from "@/components/LangProvider";
+import CoachingFiles from "@/components/CoachingFiles";
 import {
   CoachingDetail, CoachingMeta, Meeting, Meta, Step, api, formatDate, formatDateTime, getCoachingMeta, getMeta,
 } from "@/lib/api";
@@ -33,7 +34,7 @@ export default function CoachingWorkspace({ id, onChange }: { id: number; onChan
   const [cm, setCm] = useState<CoachingMeta | null>(null);
   const [meta, setMeta] = useState<Meta | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<"plan" | "messages" | "rdv" | "dossier">("plan");
+  const [tab, setTab] = useState<"plan" | "messages" | "rdv" | "dossier" | "documents">("plan");
 
   const reload = useCallback(async () => {
     try {
@@ -67,6 +68,7 @@ export default function CoachingWorkspace({ id, onChange }: { id: number; onChan
     { k: "plan", label: `Plan · ${c.progress} %` },
     { k: "messages", label: `Messages${c.messages.length ? ` · ${c.messages.length}` : ""}` },
     { k: "rdv", label: "Rendez-vous" },
+    { k: "documents", label: `${t("Documents")}${c.files?.length ? ` · ${c.files.length}` : ""}` },
     { k: "dossier", label: isAdvisor ? t("Dossier du candidat") : t("Mes candidatures") },
   ];
 
@@ -78,6 +80,9 @@ export default function CoachingWorkspace({ id, onChange }: { id: number; onChan
             <div className="flex flex-wrap items-center gap-2">
               <StatusChip status={c.status} label={cm.statuses[c.status]} />
               {c.needs.map((n) => <span key={n} className="chip">{cm.needs[n] ?? n}</span>)}
+              {c.offer_name && <span className="chip">{c.offer_name}</span>}
+              {c.payment_status === "paye" && <span className="chip border-brand/40 text-brand">{t("Payé")}</span>}
+              {c.payment_status === "a_payer" && <span className="chip border-warm/40 text-warm">{t("En attente de paiement")}</span>}
             </div>
             <p className="mt-3 font-serif text-lg leading-snug">{c.goal}</p>
             {c.availability && <p className="mt-1 text-sm text-muted">{t("Disponibilités :")} {c.availability}</p>}
@@ -109,6 +114,7 @@ export default function CoachingWorkspace({ id, onChange }: { id: number; onChan
       {tab === "plan" && <Plan c={c} isAdvisor={isAdvisor} open={open} reload={reload} />}
       {tab === "messages" && <Messages c={c} open={open} reload={reload} />}
       {tab === "rdv" && <Meetings c={c} cm={cm} isAdvisor={isAdvisor} reload={reload} />}
+      {tab === "documents" && <CoachingFiles c={c} open={open} isAdvisor={isAdvisor} reload={reload} />}
       {tab === "dossier" && <Dossier c={c} meta={meta} isAdvisor={isAdvisor} />}
 
       {isAdvisor && c.status === "en_cours" && <FinishBox id={c.id} reload={reload} />}

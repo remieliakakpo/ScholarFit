@@ -19,8 +19,6 @@ from datetime import date
 from pathlib import Path
 
 import httpx
-
-from ..netguard import safe_client
 from sqlalchemy.orm import Session
 
 from ..ai.client import ask_json, ask_web

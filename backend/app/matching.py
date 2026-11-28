@@ -66,11 +66,16 @@ class Criteria:
     situations: list[str] = field(default_factory=list)
     gender: str | None = None  # f | m : ouvre les offres réservées aux femmes
     deadline_after: date | None = None
+    experience_years: float | None = None
+    experience_declared: bool = False  # True : saisie par l'étudiant ; False : estimée d'après le CV
 
     @classmethod
     def from_profile(cls, p: Profile, today: date | None = None) -> "Criteria":
         today = today or date.today()
+        declared = getattr(p, "work_experience_years", None)
         return cls(
+            experience_years=declared if declared is not None else estimate_experience_years(p.cv_text, today),
+            experience_declared=declared is not None,
             target_level=p.target_level,
             nationalities=list(p.nationalities or []),
             age=age_on(p.birth_date, today) if p.birth_date else None,
@@ -123,6 +128,8 @@ class Criteria:
             situations=list(d.get("situations") or []),
             gender=d.get("gender") or None,
             deadline_after=date.fromisoformat(d["deadline_after"]) if d.get("deadline_after") else None,
+            experience_years=d.get("work_experience_years"),
+            experience_declared=d.get("work_experience_years") is not None,
         )
 
 
@@ -134,6 +141,45 @@ class MatchResult:
     reasons: list[str]
     gaps: list[str]
     days_left: int | None
+
+
+_MONTHS_RE = {"jan": 1, "fév": 2, "fev": 2, "feb": 2, "mar": 3, "avr": 4, "apr": 4, "mai": 5, "may": 5, "juin": 6, "jun": 6,
+              "juil": 7, "jul": 7, "aoû": 8, "aou": 8, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "déc": 12, "dec": 12}
+_RANGE = re.compile(r"(?:([a-zéû]{3,9})\.?\s+)?((?:19|20)\d{2})\s*[-–—à]+\s*(?:(?:([a-zéû]{3,9})\.?\s+)?((?:19|20)\d{2})|(aujourd'hui|aujourd’hui|présent|present|now|en cours|current))", re.I)
+
+
+def _month(word: str | None, default: int) -> int:
+    if not word:
+        return default
+    w = word.lower()
+    return next((v for k, v in _MONTHS_RE.items() if w.startswith(k)), default)
+
+
+def estimate_experience_years(cv_text: str | None, today: date | None = None) -> float | None:
+    """Années d'expérience professionnelle estimées d'après les périodes de la rubrique « Expérience » du CV
+    (stages compris, périodes qui se chevauchent comptées une fois). None si le CV n'en dit rien."""
+    if not cv_text:
+        return None
+    today = today or date.today()
+    lines = cv_text.splitlines()
+    in_exp, months = False, set()
+    for line in lines:
+        bare = line.strip()
+        if bare and len(bare) < 45 and (bare.isupper() or bare.endswith(":")):
+            low = bare.lower()
+            in_exp = any(w in low for w in ("expérience", "experience", "emploi", "employment", "parcours professionnel", "stages"))
+            continue
+        if not in_exp:
+            continue
+        for m in _RANGE.finditer(line):
+            y1, y2 = int(m.group(2)), (today.year if m.group(5) else int(m.group(4)))
+            m1 = _month(m.group(1), 1)
+            m2 = today.month if m.group(5) else _month(m.group(3), 12 if not m.group(3) else 1)
+            a, b = y1 * 12 + m1, min(y2 * 12 + m2, today.year * 12 + today.month)
+            months.update(range(a, b + 1))
+    if not months:
+        return None
+    return round(len(months) / 12, 1)
 
 
 def age_on(birth: date, on: date) -> int:
@@ -171,6 +217,8 @@ def hard_filter(s: Scholarship, c: Criteria, today: date) -> str | None:
             return "nationalité"
     if s.max_age and c.age is not None and c.age > s.max_age:
         return "âge"
+    if s.min_experience_years and c.experience_declared and c.experience_years is not None and c.experience_years < s.min_experience_years:
+        return t("expérience professionnelle", "work experience")
     dest = c.destination_countries()
     if dest and s.study_countries and not set(s.study_countries) & dest:
         return t("pays d'étude", "study country")
@@ -252,6 +300,21 @@ def score(s: Scholarship, c: Criteria, today: date) -> MatchResult:
             blocking += 1
             gaps.append(t(f"votre moyenne ({c.grade_average:g}/20) est sous le minimum de {s.min_grade:g}/20",
                           f"your average ({c.grade_average:g}/20) is below the minimum of {s.min_grade:g}/20"))
+    if s.min_experience_years:
+        need = s.min_experience_years
+        need_txt = f"{need:g} an{'s' if need >= 2 else ''}"
+        if c.experience_years is None:
+            gaps.append(t(f"il faut au moins {need_txt} d'expérience professionnelle : indiquez la vôtre dans votre profil",
+                          f"at least {need:g} year{'s' if need >= 2 else ''} of work experience required: add yours to your profile"))
+        elif c.experience_years >= need:
+            reasons.append(t(f"vous avez l'expérience professionnelle demandée ({need_txt} minimum)",
+                             f"you have the work experience required ({need:g} years minimum)"))
+        else:
+            blocking += 1
+            part -= 0.25
+            have = f"{c.experience_years:g}".replace(".", ",")
+            gaps.append(t(f"il faut au moins {need_txt} d'expérience professionnelle ; votre CV en montre environ {have} : vérifiez avant de candidater",
+                          f"at least {need:g} years of work experience required; your CV shows about {c.experience_years:g}: check before applying"))
     lang, msg = language_ok(s, c)
     if lang is True:
         part += 0.25
@@ -308,6 +371,36 @@ def score(s: Scholarship, c: Criteria, today: date) -> MatchResult:
         chance = "moyenne"
 
     return MatchResult(s, final, chance, reasons, gaps, days_left)
+
+
+def widen_hint(count: int, c: Criteria) -> str | None:
+    """Conseil affiché quand il y a moins de 10 résultats."""
+    if count >= 10:
+        return None
+    tips = []
+    if c.wished_countries or c.wished_regions:
+        tips.append(t("ajoutez d'autres pays ou choisissez « partout dans le monde »", "add other countries or choose \"anywhere in the world\""))
+    if c.full_funding_only:
+        tips.append(t("acceptez aussi les bourses partielles", "also accept partial scholarships"))
+    if not c.languages:
+        tips.append(t("indiquez les langues que vous parlez", "add the languages you speak"))
+    tips.append(t("consultez aussi les bourses à préparer pour la prochaine session", "also look at the scholarships to prepare for the next round"))
+    return t("Peu de bourses correspondent à tous vos critères. Pour en voir davantage : ", "Few scholarships match all your criteria. To see more: ") + " ; ".join(tips) + "."
+
+
+def next_session(scholarships: list[Scholarship], c: Criteria, today: date | None = None, limit: int = 12) -> list[MatchResult]:
+    """Bourses annuelles dont la session est close mais qui conviendraient au profil : à préparer pour l'an prochain."""
+    today = today or date.today()
+    out = []
+    for s in scholarships:
+        if not s.recurring or deadline_info(s, today).status != "expiree":
+            continue
+        reason = hard_filter(s, c, today.replace(year=today.year - 5))  # on ignore la date limite, pas les autres critères
+        if reason and reason not in (t("date limite dépassée", "deadline passed"),):
+            continue
+        out.append(score(s, c, today))
+    out.sort(key=lambda m: m.score, reverse=True)
+    return out[:limit]
 
 
 def rank(scholarships: list[Scholarship], c: Criteria, today: date | None = None, limit: int = 50) -> tuple[list[MatchResult], int]:

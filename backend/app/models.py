@@ -2,7 +2,7 @@
 ce qui fonctionne aussi bien avec SQLite qu'avec PostgreSQL."""
 from datetime import date, datetime, timezone
 
-from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -94,6 +94,17 @@ class Scholarship(Base):
     source_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     collected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Publication : « publie » (visible), « a_relire » (collectée automatiquement, attend une relecture
+    # dans /admin), « rejete ». Les fiches de départ et celles saisies dans /admin sont publiées.
+    review: Mapped[str] = mapped_column(String(12), default="publie", index=True)
+    # Modifiée à la main dans /admin : le chargement des fiches de départ ne l'écrase plus.
+    edited_by_admin: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Années d'expérience professionnelle exigées (ex. Chevening 2, Banque mondiale 3)
+    min_experience_years: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Pièce rédigée attendue : lettre | essais | personal_statement | projet_recherche
+    statement_type: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    # Langue(s) du dossier (codes ISO : fr, en, de…). Vide : déduite du pays.
+    application_languages: Mapped[list] = mapped_column(JSON, default=list)
 
     source: Mapped[Source | None] = relationship()
 
@@ -104,15 +115,12 @@ class User(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(300))
+    # Prénom ou nom d'utilisateur demandé à l'inscription (« Salut, Awa »). Vide pour les anciens comptes.
+    name: Mapped[str] = mapped_column(String(80), default="")
+    email_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     lang: Mapped[str] = mapped_column(String(2), default="fr")  # langue choisie sur le site (alertes, e-mails)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-    # Sécurité du compte
-    email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    # Augmenté à chaque changement de mot de passe : les sessions et liens émis avant deviennent invalides.
-    token_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
-    # Date d'acceptation des conditions et de la politique de confidentialité (inscription)
-    terms_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     profile: Mapped["Profile"] = relationship(back_populates="user", uselist=False, cascade="all, delete-orphan")
     applications: Mapped[list["Application"]] = relationship(back_populates="user", cascade="all, delete-orphan")
@@ -125,12 +133,18 @@ class User(Base):
     saved_searches: Mapped[list["SavedSearch"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
     @property
-    def email_verified(self) -> bool:
-        return self.email_verified_at is not None
-
-    @property
     def is_advisor(self) -> bool:
         return self.advisor is not None and self.advisor.active
+
+    @property
+    def display_name(self) -> str:
+        """Nom affiché dans « Salut, … » : nom d'utilisateur, sinon prénom du profil, sinon début de l'e-mail."""
+        if self.name and self.name.strip():
+            return self.name.strip()
+        full = (self.profile.full_name or "").strip() if self.profile else ""
+        if full:
+            return full.split()[0]
+        return self.email.split("@")[0]
 
 
 class Profile(Base):
@@ -161,6 +175,8 @@ class Profile(Base):
     language_scores: Mapped[dict] = mapped_column(JSON, default=dict)  # {"IELTS": 6.5}
     experiences: Mapped[str | None] = mapped_column(Text, nullable=True)
     engagement: Mapped[str | None] = mapped_column(Text, nullable=True)
+    interests: Mapped[str | None] = mapped_column(Text, nullable=True)  # centres d'intérêt (rubrique du CV)
+    work_experience_years: Mapped[float | None] = mapped_column(Float, nullable=True)  # années d'expérience professionnelle
     project: Mapped[str | None] = mapped_column(Text, nullable=True)
     full_funding_only: Mapped[bool] = mapped_column(Boolean, default=False)
     wished_regions: Mapped[list] = mapped_column(JSON, default=list)  # afrique, europe, amerique, asie, oceanie (vide = partout)
@@ -171,16 +187,6 @@ class Profile(Base):
 
     # Facultatif (sensible) : débloque des bourses ciblées
     situations: Mapped[list] = mapped_column(JSON, default=list)  # refugie, handicap, revenus_modestes, premiere_generation, femmes
-    # Consentement explicite à l'utilisation de ces données sensibles (obligatoire pour les enregistrer)
-    sensitive_consent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-
-    def sync_sensitive_consent(self) -> None:
-        """Cocher une de ces situations, sous le texte qui explique leur usage, vaut consentement :
-        on en garde la date. Tout décocher retire le consentement."""
-        if self.situations and self.sensitive_consent_at is None:
-            self.sensitive_consent_at = utcnow()
-        elif not self.situations:
-            self.sensitive_consent_at = None
 
     cv_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     # En-tête des CV et lettres
