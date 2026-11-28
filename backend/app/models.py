@@ -118,6 +118,9 @@ class User(Base):
     # Prénom ou nom d'utilisateur demandé à l'inscription (« Salut, Awa »). Vide pour les anciens comptes.
     name: Mapped[str] = mapped_column(String(80), default="")
     email_verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    token_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    terms_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     lang: Mapped[str] = mapped_column(String(2), default="fr")  # langue choisie sur le site (alertes, e-mails)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -187,6 +190,13 @@ class Profile(Base):
 
     # Facultatif (sensible) : débloque des bourses ciblées
     situations: Mapped[list] = mapped_column(JSON, default=list)  # refugie, handicap, revenus_modestes, premiere_generation, femmes
+    sensitive_consent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    def sync_sensitive_consent(self) -> None:
+        if self.situations and self.sensitive_consent_at is None:
+            self.sensitive_consent_at = utcnow()
+        elif not self.situations:
+            self.sensitive_consent_at = None
 
     cv_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     # En-tête des CV et lettres
@@ -558,3 +568,65 @@ class SiteSetting(Base):
     key: Mapped[str] = mapped_column(String(60), unique=True, index=True)
     value: Mapped[dict] = mapped_column(JSON, default=dict)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Payment(Base):
+    __tablename__ = "payments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    transaction_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    purpose: Mapped[str] = mapped_column(String(20))
+    coaching_id: Mapped[int | None] = mapped_column(ForeignKey("coachings.id", ondelete="SET NULL"), nullable=True)
+    amount: Mapped[int] = mapped_column(Integer)
+    currency: Mapped[str] = mapped_column(String(5), default="XOF")
+    description: Mapped[str] = mapped_column(String(200), default="")
+    provider: Mapped[str] = mapped_column(String(20))
+    status: Mapped[str] = mapped_column(String(20), default="en_attente", index=True)
+    checkout_url: Mapped[str | None] = mapped_column(String(800), nullable=True)
+    method: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    provider_ref: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    provider_message: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    credit_order_id: Mapped[int | None] = mapped_column(ForeignKey("credit_orders.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    user: Mapped[User] = relationship()
+
+
+class EmailLog(Base):
+    __tablename__ = "email_log"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    to: Mapped[str] = mapped_column(String(320), index=True)
+    subject: Mapped[str] = mapped_column(String(300))
+    kind: Mapped[str] = mapped_column(String(40), default="autre")
+    key: Mapped[str | None] = mapped_column(String(150), nullable=True, unique=True)
+    backend: Mapped[str] = mapped_column(String(20))
+    status: Mapped[str] = mapped_column(String(20), default="envoye")
+    error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class CoachingFile(Base):
+    __tablename__ = "coaching_files"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    coaching_id: Mapped[int] = mapped_column(ForeignKey("coachings.id", ondelete="CASCADE"), index=True)
+    author_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    author_role: Mapped[str] = mapped_column(String(20))
+    category: Mapped[str] = mapped_column(String(20), default="piece")
+    filename: Mapped[str] = mapped_column(String(200))
+    content_type: Mapped[str] = mapped_column(String(100))
+    size: Mapped[int] = mapped_column(Integer)
+    data: Mapped[bytes] = mapped_column(LargeBinary)
+    note: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class AppSetting(Base):
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(60), primary_key=True)
+    value: Mapped[str] = mapped_column(Text)

@@ -1,7 +1,7 @@
 """Accompagnement des candidatures : côté candidat, côté conseiller et côté administration."""
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 

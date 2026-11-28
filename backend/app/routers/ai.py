@@ -19,7 +19,7 @@ from ..i18n import t
 from ..models import Application, CreditOrder, Document, Scholarship, User
 from ..quota import can_use_ai
 from ..routers.profile import get_profile
-from ..security import admin_user, current_user
+from ..security import admin_user, current_user, verified_user
 
 router = APIRouter(prefix="/api", tags=["CV, lettres et dossiers"])
 

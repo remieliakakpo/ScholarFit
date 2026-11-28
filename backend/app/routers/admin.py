@@ -183,3 +183,27 @@ def set_opportunity_types(body: KindsIn, request: Request, _: User = Depends(adm
         raise HTTPException(422, "Gardez au moins un type affiché") from e
     request.state.audit_details = {"avant": before, "apres": after}  # journal d'audit
     return {"kinds_enabled": after}
+
+
+@router.get("/relecture", response_model=list[ScholarshipOut])
+def review_queue(_: User = Depends(admin_user), db: Session = Depends(get_db)):
+    stmt = select(Scholarship).where(Scholarship.review == "a_relire").order_by(Scholarship.collected_at.desc()).limit(200)
+    return [scholarship_out(s) for s in db.scalars(stmt)]
+
+
+class ReviewIn(BaseModel):
+    decision: str
+
+
+@router.post("/relecture/{sid}", response_model=ScholarshipOut)
+def review_decide(sid: int, body: ReviewIn, _: User = Depends(admin_user), db: Session = Depends(get_db)):
+    s = db.get(Scholarship, sid)
+    if s is None:
+        raise HTTPException(404, "Fiche introuvable")
+    if body.decision not in ("publie", "rejete"):
+        raise HTTPException(422, "Décision : publie ou rejete")
+    s.review = body.decision
+    if body.decision == "publie":
+        s.verified_at = datetime.now(timezone.utc)
+    db.commit()
+    return scholarship_out(s)

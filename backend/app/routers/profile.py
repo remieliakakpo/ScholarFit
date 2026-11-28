@@ -1,13 +1,14 @@
-from datetime import date
+import json
+from datetime import date, datetime, timezone
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
+from sqlalchemy import inspect as sa_inspect, select
 from sqlalchemy.orm import Session
 
 from ..ai.chat import parse_rules
 from ..ai.documents import extract_text, split_sections
 from ..db import get_db
-from ..matching import Criteria, missing_minimum, profile_completeness, rank
+from ..matching import Criteria, missing_minimum, next_session, profile_completeness, rank, widen_hint
 from ..models import AIUsage, Document, Profile, Scholarship, ScholarshipReport, User
 from ..schemas import MatchesOut, ProfileIn, ProfileOut
 from ..security import current_user
@@ -107,6 +108,7 @@ def update_profile(body: ProfileIn, user: User = Depends(current_user), db: Sess
         raise HTTPException(422, "Date de naissance dans le futur")
     for k, v in data.items():
         setattr(p, k, v)
+    p.sync_sensitive_consent()
     db.commit()
     return profile_out(p)
 

@@ -5,6 +5,13 @@ from pathlib import Path
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+DEV_SECRET = "dev-secret-a-changer-absolument-en-production-0123456789"
+KNOWN_SECRETS = {
+    DEV_SECRET,
+    "change-moi-avec-une-longue-chaine-aleatoire",
+    "change-moi-en-production-avec-une-longue-chaine",
+}
+
 # Dossier backend/ : le fichier .env et la base SQLite y sont cherchés quel que soit le dossier
 # depuis lequel l'API est lancée (sinon une base vide était créée ailleurs, sans les comptes de démo).
 BACKEND_DIR = Path(__file__).resolve().parent.parent
@@ -19,6 +26,13 @@ class Settings(BaseSettings):
     # SQLite par défaut pour démarrer sans rien installer. En production :
     # postgresql+psycopg://user:pass@localhost:5432/bourses
     database_url: str = "sqlite:///./bourses.db"
+    secret_key: str = DEV_SECRET
+    session_cookie_name: str = "sf_session"
+    token_expire_minutes: int = 60 * 24
+    session_max_days: int = 30
+    trusted_proxies: str = "127.0.0.1,::1"
+    max_request_mb: float = 1.0
+    fetch_allow_private: bool = False
 
     @field_validator("database_url")
     @classmethod
@@ -147,6 +161,7 @@ class Settings(BaseSettings):
 
     # Adresse publique du site, utilisée dans les liens des e-mails (confirmation, mot de passe oublié)
     site_url: str = "http://localhost:3000"
+    frontend_url: str = "http://localhost:3000"
     # Envoi des e-mails. Sans SMTP_HOST, les e-mails (et leurs liens) sont écrits dans la console de l'API.
     smtp_host: str = ""
     smtp_port: int = 587
@@ -170,6 +185,14 @@ class Settings(BaseSettings):
     @property
     def is_dev(self) -> bool:
         return self.app_env.strip().lower() in {"dev", "development", "developpement", "test"}
+
+    @property
+    def is_production(self) -> bool:
+        return self.app_env.strip().lower() in {"prod", "production"}
+
+    @property
+    def trusted_proxy_list(self) -> list[str]:
+        return [proxy.strip() for proxy in self.trusted_proxies.split(",") if proxy.strip()]
 
     @property
     def demo_enabled(self) -> bool:

@@ -231,6 +231,7 @@ def submit(body: QuestionnaireIn, kind: str = Query("bourse", pattern=KIND_OR_AL
         user.profile = p
         for k, v in data.items():
             setattr(p, k, v)
+        p.sync_sensitive_consent()
         p.questionnaire_done_at = datetime.now(timezone.utc)
         db.commit()
         c = Criteria.from_profile(p, today)
@@ -250,7 +251,9 @@ def submit(body: QuestionnaireIn, kind: str = Query("bourse", pattern=KIND_OR_AL
     stmt = select(Scholarship).where(Scholarship.kind.in_(shown))
     if kind != "tout":
         stmt = stmt.where(Scholarship.kind == kind)
-    results, excluded = rank(list(db.scalars(stmt)), c, today, limit=500)
+    scholarships = list(db.scalars(stmt))
+    results, excluded = rank(scholarships, c, today, limit=500)
+    later = [match_out(m) for m in next_session(scholarships, c, today)]
     dest = c.strict_destination()
     items = [match_out(m) for m in results]
     if dest:

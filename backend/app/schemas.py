@@ -15,6 +15,7 @@ class RegisterIn(BaseModel):
     name: str = Field(default="", max_length=80)
     email: EmailStr
     password: str = Field(min_length=8)
+    accept_terms: bool = False
 
 
 class LoginIn(BaseModel):
@@ -53,6 +54,15 @@ class TokenIn(BaseModel):
 class ResetIn(BaseModel):
     token: str = Field(min_length=10, max_length=2000)
     password: str = Field(min_length=8)
+
+
+class ResetPasswordIn(ResetIn):
+    pass
+
+
+class ChangePasswordIn(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8)
 
 
 # ---------- Bourses ----------

@@ -61,7 +61,7 @@ def search(db: Session, *, today: date | None = None, q: str | None = None, kind
     today = today or date.today()
     if enabled is not None and kind and kind not in enabled:
         return [], {}
-    stmt = select(Scholarship)
+    stmt = select(Scholarship).where(Scholarship.review == "publie")
     if enabled is not None and not kind:
         stmt = stmt.where(Scholarship.kind.in_(enabled))
     if extra_where is not None:

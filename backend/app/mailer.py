@@ -41,7 +41,67 @@ MINT = "#3ee0a8"
 AMBER = "#ffb547"
 
 
-def send_mail(to: str, subject: str, body: str, headers: dict[str, str] | None = None) -> bool:
+@dataclass
+class Button:
+    label: str
+    url: str
+
+
+def absolute_url(path: str) -> str:
+    if path.startswith("http://") or path.startswith("https://"):
+        return path
+    return get_settings().site_url.rstrip("/") + "/" + path.lstrip("/")
+
+
+def email_button(label: str, path: str) -> Button:
+    return Button(label, absolute_url(path))
+
+
+def render_html(subject: str, text: str, button: Button | None = None, footer: str | None = None) -> str:
+    paragraphs = [p.strip() for p in text.strip().split("\n\n") if p.strip()]
+    body = "".join(
+        f'<p style="margin:0 0 16px;font-size:15px;line-height:1.6;color:#1f2937">{html.escape(p).replace(chr(10), "<br>")}</p>'
+        for p in paragraphs
+    )
+    if button:
+        body += (
+            f'<p style="margin:24px 0 8px"><a href="{html.escape(button.url, quote=True)}" '
+            f'style="display:inline-block;background:{MINT};color:{INK};font-weight:700;font-size:15px;'
+            f'text-decoration:none;padding:12px 22px;border-radius:999px">{html.escape(button.label)}</a></p>'
+        )
+    foot = html.escape(footer or "ScholarFit · Bourses d'études, stages et conférences dans le monde entier")
+    site = html.escape(get_settings().site_url)
+    return f"""<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{html.escape(subject)}</title></head>
+<body style="margin:0;padding:0;background:#eef1f5;font-family:Arial,Helvetica,sans-serif">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#eef1f5;padding:24px 12px">
+<tr><td align="center">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#ffffff;border-radius:16px;overflow:hidden">
+<tr><td style="background:{INK};padding:20px 28px">
+<span style="font-family:Georgia,'Times New Roman',serif;font-size:22px;font-weight:700;color:#ffffff">Scholar</span><span style="font-family:Georgia,'Times New Roman',serif;font-size:22px;font-weight:700;color:{MINT}">Fit</span>
+<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:{AMBER};margin-left:4px"></span>
+</td></tr>
+<tr><td style="padding:28px">
+<h1 style="margin:0 0 18px;font-family:Georgia,'Times New Roman',serif;font-size:22px;line-height:1.3;color:{INK}">{html.escape(subject)}</h1>
+{body}
+</td></tr>
+<tr><td style="padding:16px 28px 24px;border-top:1px solid #e5e7eb;font-size:12px;line-height:1.5;color:#6b7280">
+{foot}<br><a href="{site}" style="color:#6b7280">{site}</a>
+</td></tr>
+</table></td></tr></table></body></html>"""
+
+
+def _sender() -> tuple[str, str]:
+    """(nom, adresse) de l'expéditeur, lus dans SMTP_FROM (« ScholarFit <no-reply@domaine.org> »)."""
+    name, addr = parseaddr(get_settings().smtp_from)
+    return name or "ScholarFit", addr or "no-reply@scholarfit.local"
+
+
+def _deliver(
+    to: str, subject: str, text: str, html_body: str | None, headers: dict[str, str] | None = None
+) -> None:
+    """Envoie vraiment l'e-mail ; lève une exception en cas d'échec."""
     s = get_settings()
     backend = s.mail_backend
     name, addr = _sender()
@@ -59,6 +119,8 @@ def send_mail(to: str, subject: str, body: str, headers: dict[str, str] | None =
         m["Message-ID"] = make_msgid(domain=addr.rsplit("@", 1)[-1] or None)
         if s.email_reply_to:
             m["Reply-To"] = s.email_reply_to
+        for header, value in (headers or {}).items():
+            m[header] = value
         m.set_content(text)
         if html_body:
             m.add_alternative(html_body, subtype="html")
@@ -66,20 +128,11 @@ def send_mail(to: str, subject: str, body: str, headers: dict[str, str] | None =
         if s.smtp_ssl:
             server = smtplib.SMTP_SSL(s.smtp_host, s.smtp_port, timeout=20, context=ctx)
         else:
-            log.warning("E-mail non envoyé à %s (« %s ») : SMTP_HOST n'est pas configuré", to, subject)
-        return False
-    msg = EmailMessage()
-    msg["From"] = s.smtp_from
-    msg["To"] = to
-    msg["Subject"] = subject
-    for k, v in (headers or {}).items():
-        msg[k] = v
-    msg.set_content(body)
-    try:
-        if s.smtp_port == 465:
-            server = smtplib.SMTP_SSL(s.smtp_host, s.smtp_port, timeout=15, context=ssl.create_default_context())
-        else:
-            server = smtplib.SMTP(s.smtp_host, s.smtp_port, timeout=15)
+            server = smtplib.SMTP(s.smtp_host, s.smtp_port, timeout=20)
+            server.ehlo()
+            if server.has_extn("starttls"):
+                server.starttls(context=ctx)
+                server.ehlo()
         with server:
             if s.smtp_user:
                 server.login(s.smtp_user, s.smtp_password)
@@ -88,6 +141,8 @@ def send_mail(to: str, subject: str, body: str, headers: dict[str, str] | None =
     if backend == "brevo":
         payload = {"sender": {"name": name, "email": addr}, "to": [{"email": to}],
                    "subject": subject, "htmlContent": html_body or text, "textContent": text}
+        if headers:
+            payload["headers"] = headers
         if s.email_reply_to:
             payload["replyTo"] = {"email": s.email_reply_to}
         r = httpx.post("https://api.brevo.com/v3/smtp/email", json=payload, timeout=20,
@@ -96,6 +151,8 @@ def send_mail(to: str, subject: str, body: str, headers: dict[str, str] | None =
         return
     if backend == "resend":
         payload = {"from": s.smtp_from, "to": [to], "subject": subject, "html": html_body or text, "text": text}
+        if headers:
+            payload["headers"] = headers
         if s.email_reply_to:
             payload["reply_to"] = s.email_reply_to
         r = httpx.post("https://api.resend.com/emails", json=payload, timeout=20,
@@ -128,16 +185,22 @@ def send_email(db: Session | None, to: str, subject: str, text: str, *, button: 
             return False
     return status == "envoye"
 
-def send_mail(to: str, subject: str, text: str, html: str | None = None) -> bool:
+def send_mail(
+    to: str, subject: str, text: str, html: str | None = None, *, headers: dict[str, str] | None = None
+) -> bool:
     """Envoie un e-mail déjà mis en forme. Renvoie False (sans lever d'erreur) si l'envoi échoue."""
     try:
-        _deliver(to, subject, text, html)
+        _deliver(to, subject, text, html, headers)
         if get_settings().mail_backend != "console":
             log.info("E-mail « %s » envoyé à %s", subject, to)
         return True
     except Exception:  # noqa: BLE001 - un e-mail perdu ne doit pas casser l'action de l'utilisateur
         log.exception("Échec de l'envoi de l'e-mail « %s » à %s", subject, to)
         return False
+
+
+def link(path: str) -> str:
+    return get_settings().frontend_url.rstrip("/") + path
 
 
 def _html(greeting: str, intro: str, button: str, link: str, outro: str) -> str:

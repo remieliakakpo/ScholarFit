@@ -25,6 +25,7 @@ from ..ai.client import ask_json, ask_web
 from ..config import get_settings
 from ..linkcheck import BROWSER_UA, check_url
 from ..models import Source
+from ..netguard import safe_client
 from ..vocab import DOMAINS, LEVELS, KINDS
 
 log = logging.getLogger(__name__)

@@ -1,14 +1,14 @@
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
 from .db import init_db
 from .i18n import LangMiddleware
 from . import scheduler
-from .routers import admin, ai, applications, auth, chat, coaching, community, monitoring, profile, questionnaire, scholarships
+from .routers import admin, ai, applications, auth, chat, coaching, community, monitoring, payments, profile, questionnaire, scholarships
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 settings = get_settings()
