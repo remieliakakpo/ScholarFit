@@ -149,3 +149,6 @@ html { scroll-behavior: smooth; }
 /* Mode léger (connexion lente ou choix de la personne, lib/pwa.ts) : pas d'animation ni d'illustration décorative */
 html[data-lite] .lite-hide { display: none !important; }
 html[data-lite] *, html[data-lite] *::before, html[data-lite] *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+
+/* Section « stages et conférences » de l'accueil : masquée si ces types sont désactivés dans l'administration */
+.kinds-section:has([data-kinds-empty]) { display: none; }

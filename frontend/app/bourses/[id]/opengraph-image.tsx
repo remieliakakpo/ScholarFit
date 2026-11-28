@@ -24,7 +24,8 @@ export default async function Image({ params }: { params: Promise<{ id: string }
     s = null;
   }
   const title = s?.title ?? "Bourses d'études, stages et conférences";
-  const kind = s?.kind === "stage" ? "Stage" : s?.kind === "conference" ? "Conférence" : "Bourse";
+  const KIND_LABELS: Record<string, string> = { bourse: "Bourse", stage: "Stage", conference: "Conférence", formation: "Formation", concours: "Concours", echange: "Programme d'échange", fellowship: "Fellowship", cours_en_ligne: "Cours en ligne" };
+  const kind = KIND_LABELS[s?.kind ?? "bourse"] ?? "Opportunité";
   return new ImageResponse(
     (
       <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", justifyContent: "space-between", padding: 64, background: "#0b0c1d", color: "#f4f5ff" }}>

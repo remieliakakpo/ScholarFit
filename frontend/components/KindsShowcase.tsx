@@ -5,6 +5,7 @@ import { Scholarship, api, deadlineInfo } from "@/lib/api";
 import Flag from "./Flag";
 import Icon from "./Icon";
 import { ConferenceArt, InternshipArt } from "./Illustrations";
+import { kindShown, useEnabledKinds } from "@/lib/useKinds";
 import { useT } from "./LangProvider";
 
 type Page = { total: number; items: Scholarship[] };
@@ -12,6 +13,7 @@ type Page = { total: number; items: Scholarship[] };
 /** Section d'accueil : stages et conférences, avec les trois prochaines offres de chaque type. */
 export default function KindsShowcase() {
   const { t } = useT();
+  const kinds = useEnabledKinds();
   const [data, setData] = useState<Record<string, Page | null>>({ stage: null, conference: null });
   useEffect(() => {
     (["stage", "conference"] as const).forEach((k) =>
@@ -22,9 +24,11 @@ export default function KindsShowcase() {
     { kind: "stage", art: InternshipArt, eyebrow: t("Stages"), title: t("Une première expérience à l'international."), text: t("Stages rémunérés dans les organisations internationales, les institutions européennes et les grandes entreprises, ouverts aux étudiants et jeunes diplômés."), cta: t("Voir tous les stages"), unit: (n: number) => t(n > 1 ? "{n} stages ouverts" : "{n} stage ouvert", { n }) },
     { kind: "conference", art: ConferenceArt, eyebrow: t("Conférences"), title: t("Rencontrer, présenter, se faire connaître."), text: t("Conférences, écoles d'été et sommets pour jeunes chercheurs et étudiants, souvent avec frais de voyage et d'hébergement pris en charge."), cta: t("Voir toutes les conférences"), unit: (n: number) => t(n > 1 ? "{n} conférences ouvertes" : "{n} conférence ouverte", { n }) },
   ];
+  const shown = blocks.filter((b) => kindShown(kinds, b.kind));
+  if (shown.length === 0) return <div data-kinds-empty hidden />; // la section entière est masquée (globals.css)
   return (
-    <div className="grid gap-5 lg:grid-cols-2">
-      {blocks.map((b) => {
+    <div className={`grid gap-5 ${shown.length > 1 ? "lg:grid-cols-2" : ""}`}>
+      {shown.map((b) => {
         const page = data[b.kind];
         const Art = b.art;
         return (

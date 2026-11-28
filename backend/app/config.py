@@ -56,6 +56,28 @@ class Settings(BaseSettings):
     ai_price_cache_read_per_mtok: float = 0.20
     ai_price_cache_write_per_mtok: float = 5.0
     ai_price_per_web_search: float = 0.01
+    # Premier passage de l'extraction (modèle économique) et relecture ciblée des fiches douteuses.
+    # Tarifs Claude Haiku 5.5 par million de jetons (jusqu'à 100 000 jetons par demande) ; la lecture
+    # du cache est une estimation, à vérifier dans la grille d'Anthropic.
+    extract_model: str = "claude-haiku-5-5"
+    review_model: str = ""  # vide = CLAUDE_MODEL
+    ai_price_small_input_per_mtok: float = 0.10
+    ai_price_small_output_per_mtok: float = 0.50
+    ai_price_small_cache_read_per_mtok: float = 0.01
+    # Premier passage avec un modèle installé sur une machine à vous (Ollama) au lieu de Claude :
+    # EXTRACT_PROVIDER=ollama. La relecture ciblée reste faite par Claude si une clé est configurée.
+    extract_provider: str = "claude"  # claude | ollama
+    ollama_url: str = "http://localhost:11434"
+    ollama_model: str = "mistral"
+    # Fichiers envoyés par les utilisateurs (preuves de paiement), hors du site public. Relatif au
+    # dossier backend/ ; en Docker, monter un volume dessus pour ne pas les perdre.
+    upload_dir: str = "uploads"
+
+    # Collecte : travaux d'IA sans personne qui attend (extraction, mise en forme, traduction)
+    # envoyés par lots (Batch API, moitié prix, réponse en moins de 24 h). false = appels immédiats.
+    ai_use_batch: bool = True
+    # Réutiliser une réponse de l'IA pour une demande identique (diagnostic de CV, conseils…), en jours
+    ai_cache_days: int = 30
     # Plafond de dépense par jour : au-delà, l'IA est coupée jusqu'au lendemain (0 = pas de plafond)
     ai_daily_budget_usd: float = 0.0
 
@@ -115,6 +137,10 @@ class Settings(BaseSettings):
 
     # Comptes administrateurs (e-mails séparés par des virgules)
     admin_emails: str = "admin@example.org"
+
+    @property
+    def review_model_name(self) -> str:
+        return self.review_model or self.claude_model
 
     @property
     def is_dev(self) -> bool:

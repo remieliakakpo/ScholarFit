@@ -22,7 +22,7 @@ from ..models import Profile, Scholarship, User
 from ..schemas import MatchOut
 from ..security import optional_user
 from ..serializers import match_out
-from ..vocab import COUNTRIES, DOMAINS, LEVEL_ORDER, LEVELS
+from ..vocab import COUNTRIES, DOMAINS, LEVEL_ORDER, LEVELS, KIND_OR_ALL_PATTERN
 
 router = APIRouter(prefix="/api", tags=["questionnaire et offres"])
 
@@ -68,6 +68,10 @@ def steps() -> list[dict]:
                  "required": False, "options": country_opts},
                 {"id": "birth_date", "label": t("Date de naissance", "Date of birth"), "type": "date", "required": True,
                  "placeholder": t("Beaucoup de bourses fixent un âge maximum", "Many scholarships set a maximum age")},
+                {"id": "gender", "label": t("Vous êtes", "You are"), "type": "select", "required": False,
+                 "options": _opts({"f": t("Une femme", "A woman"), "m": t("Un homme", "A man")}),
+                 "placeholder": t("Facultatif. Certaines bourses et stages sont réservés aux femmes.",
+                                  "Optional. Some scholarships and internships are reserved for women.")},
             ],
         },
         {
@@ -207,6 +211,7 @@ def _clean(a: dict) -> dict:
             raise HTTPException(422, t(f"Score invalide pour {k}", f"Invalid score for {k}"))
     out["language_scores"] = scores
     out["situations"] = [x for x in a.get("situations") or [] if x in SITUATION_LABELS]
+    out["gender"] = a.get("gender") if a.get("gender") in ("f", "m") else None
     if a.get("applications_planned") not in (None, ""):
         try:
             out["applications_planned"] = max(1, min(50, int(a["applications_planned"])))
@@ -225,7 +230,7 @@ def questionnaire():
 
 
 @router.post("/questionnaire", response_model=QuestionnaireOut)
-def submit(body: QuestionnaireIn, kind: str = Query("bourse", pattern="^(bourse|stage|conference|tout)$"), user: User | None = Depends(optional_user), db: Session = Depends(get_db)):
+def submit(body: QuestionnaireIn, kind: str = Query("bourse", pattern=KIND_OR_ALL_PATTERN), user: User | None = Depends(optional_user), db: Session = Depends(get_db)):
     data = _clean(body.answers)
     today = date.today()
     if user is not None:
@@ -247,7 +252,12 @@ def submit(body: QuestionnaireIn, kind: str = Query("bourse", pattern="^(bourse|
             languages=list(data["languages"]), project_text=data.get("project", ""),
             full_funding_only=data["full_funding_only"], situations=data["situations"],
         )
-    stmt = select(Scholarship) if kind == "tout" else select(Scholarship).where(Scholarship.kind == kind)
+    from ..site_settings import enabled_kinds
+
+    shown = enabled_kinds(db)
+    stmt = select(Scholarship).where(Scholarship.kind.in_(shown))
+    if kind != "tout":
+        stmt = stmt.where(Scholarship.kind == kind)
     results, excluded = rank(list(db.scalars(stmt)), c, today, limit=500)
     dest = c.strict_destination()
     items = [match_out(m) for m in results]

@@ -177,7 +177,7 @@ def extract_criteria(message: str, previous: dict, use_ai: bool, today: date | N
     ai_used = False
     if use_ai:
         context = f"Date du jour : {today.isoformat()}.\nCritères déjà connus : {previous}\nDernier message : {message}"
-        extracted = ask_json(AI_SYSTEM, context, AI_SCHEMA, effort="low", max_tokens=2000)
+        extracted = ask_json(AI_SYSTEM, context, AI_SCHEMA, effort="low", max_tokens=2000, cache=True)
         if extracted is not None:
             ai_used = True
             extracted = {k: v for k, v in extracted.items() if v not in (None, [], "")}

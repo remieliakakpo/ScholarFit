@@ -122,7 +122,11 @@ def ai_costs(days: int = Query(30, ge=1, le=365), _: User = Depends(admin_user),
     ).all()
     today = next((float(c or 0) for d, c, *_ in per_day if d == date.today()), 0.0)
     total = sum(float(c or 0) for _, c, *_ in per_day)
+    from ..models import AIJob
+
+    jobs = dict(db.execute(select(AIJob.status, func.count()).group_by(AIJob.status)).all())
     return {
+        "jobs": {k: int(v) for k, v in jobs.items()}, "batch": s.ai_use_batch,
         "currency": "USD", "ai_enabled": s.ai_enabled, "model": s.claude_model, "daily_budget": s.ai_daily_budget_usd or None,
         "today": round(today, 4), "total": round(total, 4), "average_per_day": round(total / days, 4),
         "days": [{"day": d.isoformat(), "cost": round(float(c or 0), 4), "calls": n, "input_tokens": int(i or 0),

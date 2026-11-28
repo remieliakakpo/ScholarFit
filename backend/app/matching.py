@@ -64,6 +64,7 @@ class Criteria:
     project_text: str = ""
     full_funding_only: bool = False
     situations: list[str] = field(default_factory=list)
+    gender: str | None = None  # f | m : ouvre les offres réservées aux femmes
     deadline_after: date | None = None
 
     @classmethod
@@ -82,7 +83,12 @@ class Criteria:
             project_text=" ".join(filter(None, [p.project, p.experiences, p.engagement, p.cv_text or ""]))[:4000],
             full_funding_only=bool(p.full_funding_only),
             situations=list(p.situations or []),
+            gender=p.gender or None,
         )
+
+    def groups(self) -> set[str]:
+        """Publics ciblés auxquels la personne appartient (sexe « f » = offres réservées aux femmes)."""
+        return set(self.situations) | ({"femmes"} if self.gender == "f" else set())
 
     def destination_countries(self) -> set[str]:
         """Pays visés : pays cités + pays des régions choisies. Vide = partout."""
@@ -115,6 +121,7 @@ class Criteria:
             project_text=d.get("project_text") or "",
             full_funding_only=bool(d.get("full_funding_only")),
             situations=list(d.get("situations") or []),
+            gender=d.get("gender") or None,
             deadline_after=date.fromisoformat(d["deadline_after"]) if d.get("deadline_after") else None,
         )
 
@@ -169,7 +176,7 @@ def hard_filter(s: Scholarship, c: Criteria, today: date) -> str | None:
         return t("pays d'étude", "study country")
     if c.full_funding_only and not s.full_funding:
         return t("financement partiel", "partial funding")
-    if s.target_groups and not set(s.target_groups) & set(c.situations):
+    if s.target_groups and not set(s.target_groups) & c.groups():
         return t("public ciblé", "target group")
     return None
 
@@ -279,7 +286,7 @@ def score(s: Scholarship, c: Criteria, today: date) -> MatchResult:
     elif s.amount:
         total += WEIGHTS["funding"] * 0.5
 
-    if s.target_groups and set(s.target_groups) & set(c.situations):
+    if s.target_groups and set(s.target_groups) & c.groups():
         reasons.append(t("elle est réservée à un public dont vous faites partie", "it is reserved for a group you belong to"))
 
     info = deadline_info(s, today)

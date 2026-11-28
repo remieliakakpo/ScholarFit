@@ -12,13 +12,16 @@ from ..serializers import scholarship_out
 from ..deadlines import deadline_info
 from ..details import REQUIREMENTS
 from ..geo import REGIONS, WORLD, countries_in
-from ..vocab import COUNTRIES, DOMAINS, KINDS, LEVELS, NATIONALITY_GROUPS, expand_nationalities
+from ..vocab import COUNTRIES, DOMAINS, KIND_PATTERN, KINDS, LEVELS, NATIONALITY_GROUPS, expand_nationalities
 
 router = APIRouter(prefix="/api", tags=["bourses"])
 
 
 @router.get("/meta")
-def meta():
+def meta(db: Session = Depends(get_db)):
+    from ..site_settings import enabled_kinds
+
+    shown = enabled_kinds(db)
     """Listes contrôlées pour les formulaires du site."""
     from .. import i18n
     from ..details import COVERAGE_LABELS, requirement_label
@@ -31,7 +34,7 @@ def meta():
         "countries": dict(sorted(countries.items(), key=lambda kv: kv[1])),
         "nationality_groups": {k: sorted(v) for k, v in NATIONALITY_GROUPS.items()},
         "regions": i18n.loc(REGIONS, i18n.REGIONS_EN),
-        "kinds": i18n.loc(KINDS, i18n.KINDS_EN),
+        "kinds": {k: v for k, v in i18n.loc(KINDS, i18n.KINDS_EN).items() if k in shown},  # types affichés
         "country_regions": {c: w[1] for c, w in WORLD.items()},
         "deadline_statuses": i18n.loc({"urgente": "Urgent (14 jours ou moins)", "bientot": "Bientôt (45 jours ou moins)",
                                        "ouverte": "Ouverte", "inconnue": "Date non publiée", "expiree": "Expirée"},
@@ -52,10 +55,15 @@ def search(db: Session, *, today: date | None = None, q: str | None = None, kind
            level: str | None = None, country: str | None = None, country_exact: bool = False, domain: str | None = None,
            nationality: str | None = None, full_funding: bool | None = None, deadline_after: date | None = None,
            deadline_before: date | None = None, include_expired: bool = False, region: str | None = None,
-           deadline_status: str | None = None, extra_where=None):
-    """Fiches qui répondent aux filtres du catalogue (sans tri ni pagination) et leur état de date limite."""
+           deadline_status: str | None = None, extra_where=None, enabled: list[str] | None = None):
+    """Fiches qui répondent aux filtres du catalogue (sans tri ni pagination) et leur état de date limite.
+    ``enabled`` : types affichés (réglage de l'administration) ; les autres sont exclus."""
     today = today or date.today()
+    if enabled is not None and kind and kind not in enabled:
+        return [], {}
     stmt = select(Scholarship)
+    if enabled is not None and not kind:
+        stmt = stmt.where(Scholarship.kind.in_(enabled))
     if extra_where is not None:
         stmt = stmt.where(extra_where)
     if kind:
@@ -104,7 +112,7 @@ def search(db: Session, *, today: date | None = None, q: str | None = None, kind
 @router.get("/scholarships", response_model=ScholarshipPage)
 def list_scholarships(
     q: str | None = None,
-    kind: str | None = Query(None, pattern="^(bourse|stage|conference)$", description="type d'opportunité ; vide = tout"),
+    kind: str | None = Query(None, pattern=KIND_PATTERN, description="type d'opportunité ; vide = tout"),
     level: str | None = None,
     country: str | None = None,
     country_exact: bool = False,
@@ -122,8 +130,10 @@ def list_scholarships(
     db: Session = Depends(get_db),
 ):
     today = date.today()
+    from ..site_settings import enabled_kinds
+
     items, info = search(
-        db, today=today, q=q, kind=kind, level=level, country=country, country_exact=country_exact, domain=domain,
+        db, today=today, enabled=enabled_kinds(db), q=q, kind=kind, level=level, country=country, country_exact=country_exact, domain=domain,
         nationality=nationality, full_funding=full_funding, deadline_after=deadline_after,
         deadline_before=deadline_before, include_expired=include_expired, region=region, deadline_status=deadline_status,
     )
@@ -143,13 +153,18 @@ def list_scholarships(
 
 
 @router.get("/stats/countries")
-def stats_countries(include_expired: bool = False, kind: str | None = Query(None, pattern="^(bourse|stage|conference)$"),
+def stats_countries(include_expired: bool = False, kind: str | None = Query(None, pattern=KIND_PATTERN),
                     db: Session = Depends(get_db)):
     """Nombre réel de bourses par pays d'études (une bourse multi-pays compte dans chacun de ses pays).
     Les bourses sans pays fixe (ex. Erasmus Mundus, AUF) sont comptées à part dans /api/stats."""
+    from ..site_settings import enabled_kinds
+
     today = date.today()
     counts: dict[str, list[int]] = {}
-    stmt = select(Scholarship).where(Scholarship.kind == kind) if kind else select(Scholarship)
+    shown = enabled_kinds(db)
+    if kind and kind not in shown:
+        return []
+    stmt = select(Scholarship).where(Scholarship.kind == kind) if kind else select(Scholarship).where(Scholarship.kind.in_(shown))
     for s in db.scalars(stmt):
         open_ = deadline_info(s, today).status != "expiree"
         if not include_expired and not open_:
@@ -176,9 +191,12 @@ def stats(db: Session = Depends(get_db)):
     today = date.today()
     total = open_ = soon = expired = multi = 0
     by_region = {r: 0 for r in REGIONS}
-    by_kind = {k: 0 for k in KINDS}
+    from ..site_settings import enabled_kinds
+
+    shown = enabled_kinds(db)
+    by_kind = {k: 0 for k in KINDS if k in shown}
     countries: set[str] = set()
-    for s in db.scalars(select(Scholarship)):
+    for s in db.scalars(select(Scholarship).where(Scholarship.kind.in_(shown))):
         st = deadline_info(s, today).status
         total += 1
         if st == "expiree":
@@ -200,7 +218,9 @@ def stats(db: Session = Depends(get_db)):
 @router.get("/scholarships/{key}", response_model=ScholarshipOut)
 def get_scholarship(key: str, db: Session = Depends(get_db)):
     s = db.get(Scholarship, int(key)) if key.isdigit() else db.scalars(select(Scholarship).where(Scholarship.slug == key)).first()
-    if not s:
+    from ..site_settings import enabled_kinds
+
+    if not s or (s.kind or "bourse") not in enabled_kinds(db):
         raise HTTPException(404, t("Bourse introuvable", "Scholarship not found"))
     if is_en():
         from ..translate import ensure_en

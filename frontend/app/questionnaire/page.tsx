@@ -46,6 +46,7 @@ function localSteps(meta: Meta): Step[] {
       { id: "nationality", label: "Votre nationalité", type: "country", required: true },
       { id: "residence_country", label: "Le pays où vous vivez aujourd'hui", type: "country" },
       { id: "birth_date", label: "Votre date de naissance", type: "date", required: true, help: "Beaucoup de bourses fixent un âge maximum." },
+      { id: "gender", label: "Vous êtes", type: "select", options: { f: "Une femme", m: "Un homme" }, help: "Facultatif. Certaines bourses et stages sont réservés aux femmes." },
     ] },
     { id: "etudes", title: "Vos études", subtitle: "Où vous en êtes aujourd'hui.", questions: [
       { id: "current_level", label: "Votre niveau actuel", type: "select", options: levels, required: true },
@@ -111,7 +112,7 @@ async function fallbackMatch(a: Answers, loggedIn: boolean): Promise<Result> {
       nationalities: nat ? [nat] : undefined, residence_country: a.residence_country || undefined, birth_date: a.birth_date || undefined,
       current_level: a.current_level || undefined, grade_average: a.grade_average === "" || a.grade_average == null ? undefined : Number(a.grade_average),
       target_level: a.target_level || undefined, domain: a.domain || undefined, wished_countries: a.wished_countries ?? undefined,
-      languages: Object.keys(languages).length ? languages : undefined, full_funding_only: Boolean(a.full_funding_only), situations: a.situations ?? undefined,
+      languages: Object.keys(languages).length ? languages : undefined, full_funding_only: Boolean(a.full_funding_only), situations: a.situations ?? undefined, gender: a.gender || undefined,
     }) });
     const m = await api<{ items: Match[] }>("/api/matches");
     return { total_matches: m.items.length, items: m.items, recommended_offer: a.help_wanted === "accompagne" ? "standard" : null, profile_saved: true };

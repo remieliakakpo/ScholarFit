@@ -4,6 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api, signOut } from "@/lib/api";
 import { Me, useAuth } from "@/lib/useAuth";
+import { kindShown, useEnabledKinds } from "@/lib/useKinds";
 import AuthModal from "./AuthModal";
 import Footer from "./Footer";
 import Icon, { Logo } from "./Icon";
@@ -61,11 +62,12 @@ function VerifyBanner() {
 
 function PublicShell({ children, loggedIn }: { children: React.ReactNode; loggedIn: boolean }) {
   const [open, setOpen] = useState(false);
+  const kinds = useEnabledKinds();
   const path = usePathname();
   const { t } = useT();
   const links = [
     { href: "/bourses", label: t("Bourses") },
-    { href: "/bourses?kind=stage", label: t("Stages") },
+    ...(kindShown(kinds, "stage") ? [{ href: "/bourses?kind=stage", label: t("Stages") }] : []),
     { href: "/questionnaire", label: t("Mon profil en 5 étapes") },
     { href: "/#comment", label: t("Comment ça marche") },
     { href: "/tarifs", label: t("Tarifs") },

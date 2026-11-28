@@ -17,6 +17,11 @@ const KINDS: Record<string, { label: string; icon: string; title: string; open1:
   bourse: { label: "Bourses", icon: "medal", title: "Toutes les bourses", open1: "{n} bourse ouverte", openN: "{n} bourses ouvertes", all1: "{n} bourse", allN: "{n} bourses" },
   stage: { label: "Stages", icon: "people", title: "Tous les stages", open1: "{n} stage ouvert", openN: "{n} stages ouverts", all1: "{n} stage", allN: "{n} stages" },
   conference: { label: "Conférences", icon: "chat", title: "Conférences et événements", open1: "{n} conférence ouverte", openN: "{n} conférences ouvertes", all1: "{n} conférence", allN: "{n} conférences" },
+  formation: { label: "Formations", icon: "book", title: "Formations et bootcamps", open1: "{n} formation ouverte", openN: "{n} formations ouvertes", all1: "{n} formation", allN: "{n} formations" },
+  concours: { label: "Concours", icon: "star", title: "Concours, prix et hackathons", open1: "{n} concours ouvert", openN: "{n} concours ouverts", all1: "{n} concours", allN: "{n} concours" },
+  echange: { label: "Échanges", icon: "globe", title: "Programmes d'échange et écoles d'été", open1: "{n} programme ouvert", openN: "{n} programmes ouverts", all1: "{n} programme", allN: "{n} programmes" },
+  fellowship: { label: "Fellowships", icon: "cap", title: "Fellowships et programmes de leadership", open1: "{n} fellowship ouvert", openN: "{n} fellowships ouverts", all1: "{n} fellowship", allN: "{n} fellowships" },
+  cours_en_ligne: { label: "Cours en ligne", icon: "sparkle", title: "Cours en ligne et certificats", open1: "{n} cours ouvert", openN: "{n} cours ouverts", all1: "{n} cours", allN: "{n} cours" },
   tout: { label: "Tout", icon: "globe", title: "Toutes les opportunités", open1: "{n} opportunité ouverte", openN: "{n} opportunités ouvertes", all1: "{n} opportunité", allN: "{n} opportunités" },
 };
 
@@ -64,6 +69,11 @@ function Bourses() {
 
   useEffect(() => { getMeta().then(setMeta).catch((e) => setError(e.message)); }, []);
   useEffect(() => {
+    // type masqué dans l'administration (lien ancien, favori) : on revient au premier type affiché
+    const shown = meta?.kinds ? Object.keys(meta.kinds) : null;
+    if (shown && f.kind !== "tout" && !shown.includes(f.kind)) setF((x) => ({ ...x, kind: shown[0] ?? "bourse" }));
+  }, [meta, f.kind]);
+  useEffect(() => {
     const params = new URLSearchParams({ page: String(page), per_page: "12" });
     Object.entries(f).forEach(([k, v]) => v && !(k === "kind" && v === "tout") && params.set(k, v));
     if (f.country) params.set("country_exact", "true"); // nombre identique à celui du carrousel
@@ -102,7 +112,7 @@ function Bourses() {
       </div>
 
       <div role="tablist" aria-label={t("Type d'opportunité")} className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:px-0">
-        {Object.entries(KINDS).map(([k, v]) => (
+        {Object.entries(KINDS).filter(([k]) => k === "tout" || !meta?.kinds || k in meta.kinds).map(([k, v]) => (
           <button key={k} type="button" role="tab" aria-selected={f.kind === k} onClick={() => { setPage(1); setF({ ...f, kind: k }); }}
             className={`flex shrink-0 items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition ${f.kind === k ? "border-brand bg-brand-soft text-brand" : "border-line bg-card text-muted hover:border-brand/50 hover:text-ink"}`}>
             <Icon name={v.icon} className="h-4 w-4" />{t(v.label)}

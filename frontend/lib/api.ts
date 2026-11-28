@@ -120,7 +120,7 @@ export type Scholarship = {
   source_name: string | null;
   // Champs ajoutés par la collecte mondiale (facultatifs : l'interface retombe sur les champs ci-dessus).
   eligibility_notes?: string[];
-  kind?: "bourse" | "stage" | "conference";
+  kind?: "bourse" | "stage" | "conference" | "formation" | "concours" | "echange" | "fellowship" | "cours_en_ligne";
   kind_label?: string | null;
   event_start?: string | null;
   event_end?: string | null;
@@ -151,6 +151,7 @@ export type Match = {
 };
 
 export type Meta = {
+  kinds?: Record<string, string>; // types d'opportunités affichés (réglage de l'administration)
   levels: Record<string, string>;
   domains: Record<string, string>;
   countries: Record<string, string>;
@@ -201,6 +202,11 @@ export type Application = {
 export type AlertItem = { id: number; kind: string; message: string; scholarship_id: number | null; read: boolean; created_at: string };
 
 let metaCache: Promise<Meta> | null = null;
+/** À appeler après un changement de réglage dans l'administration. */
+export function clearMetaCache() {
+  metaCache = null;
+}
+
 export function getMeta(): Promise<Meta> {
   if (!metaCache) metaCache = api<Meta>("/api/meta").catch((e) => { metaCache = null; throw e; });
   return metaCache;
