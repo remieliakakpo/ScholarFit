@@ -17,6 +17,8 @@ def _http_or_none(v: str | None) -> str | None:
 
 # ---------- Comptes ----------
 class RegisterIn(BaseModel):
+    # demandé par le formulaire d'inscription ; facultatif pour l'API (sinon début de l'e-mail)
+    name: str = Field(default="", max_length=80)
     email: EmailStr
     password: str = Field(min_length=8, max_length=200)
     # Acceptation des conditions et de la politique de confidentialité (case à cocher obligatoire)
@@ -41,6 +43,9 @@ class ResetPasswordIn(BaseModel):
     password: str = Field(min_length=8, max_length=200)
 
 
+ResetIn = ResetPasswordIn  # nom utilisé par les pages du site
+
+
 class ChangePasswordIn(BaseModel):
     current_password: str = Field(max_length=200)
     new_password: str = Field(min_length=8, max_length=200)
@@ -49,9 +54,16 @@ class ChangePasswordIn(BaseModel):
 class UserOut(ORM):
     id: int
     email: str
+    name: str = ""
+    display_name: str = ""
     is_admin: bool
     is_advisor: bool = False
     email_verified: bool = False
+    home: str = "/mes-bourses"  # page d'arrivée après connexion selon le rôle
+
+
+class UserUpdate(BaseModel):
+    name: str = Field(min_length=2, max_length=80)
 
 
 # ---------- Bourses ----------
@@ -91,6 +103,9 @@ class ScholarshipBase(BaseModel):
     city: str | None = None
     remote: bool = False
     duration: str | None = None
+    min_experience_years: float | None = Field(default=None, ge=0, le=60)
+    statement_type: str | None = Field(default=None, max_length=30)  # lettre | essais | personal_statement | projet_recherche
+    application_languages: list[str] = Field(default=[], max_length=10)
 
     @field_validator("kind")
     @classmethod
@@ -152,6 +167,7 @@ class ScholarshipOut(ScholarshipBase, ORM):
     deadline_estimated: bool = False
     previous_deadline: date | None = None
     next_expected_deadline: date | None = None
+    review: str = "publie"  # publie | a_relire | rejete
 
 
 class ScholarshipPage(BaseModel):
@@ -178,6 +194,8 @@ class ProfileIn(BaseModel):
     language_scores: dict[str, float] | None = None
     experiences: str | None = Field(default=None, max_length=8000)
     engagement: str | None = Field(default=None, max_length=5000)
+    interests: str | None = Field(default=None, max_length=3000)
+    work_experience_years: float | None = Field(default=None, ge=0, le=60)
     project: str | None = Field(default=None, max_length=5000)
     full_funding_only: bool | None = None
     situations: list[str] | None = None
@@ -208,6 +226,8 @@ class ProfileOut(ORM):
     language_scores: dict[str, float]
     experiences: str | None
     engagement: str | None
+    interests: str | None = None
+    work_experience_years: float | None = None
     project: str | None
     full_funding_only: bool
     situations: list[str]
@@ -244,6 +264,10 @@ class MatchesOut(BaseModel):
     missing_minimum: list[str]
     excluded_count: int
     items: list[MatchOut]
+    # Bourses annuelles à session close qui conviendraient : « À préparer pour la prochaine session »
+    next_session: list[MatchOut] = []
+    # Conseil quand il y a peu de résultats (élargir les pays, compléter le profil)
+    widen_hint: str | None = None
 
 
 # ---------- Chat ----------
@@ -547,7 +571,20 @@ class CoachingOut(BaseModel):
     my_role: str = "candidat"  # candidat | conseiller | admin
 
 
+class CoachingFileOut(BaseModel):
+    id: int
+    author_role: str
+    category: str
+    filename: str
+    content_type: str
+    size: int
+    note: str | None = None
+    created_at: datetime
+    mine: bool = False
+
+
 class CoachingDetailOut(CoachingOut):
+    files: list[CoachingFileOut] = []
     steps: list[StepOut] = []
     messages: list[MessageOut] = []
     meetings: list[MeetingOut] = []

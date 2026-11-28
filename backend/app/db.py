@@ -7,8 +7,17 @@ from .config import get_settings
 
 settings = get_settings()
 
-connect_args = {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
-engine = create_engine(settings.database_url, connect_args=connect_args)
+def _normalize(url: str) -> str:
+    """Accepte le lien tel que Railway ou Render le donnent (postgres:// ou postgresql://)."""
+    for prefix in ("postgres://", "postgresql://"):
+        if url.startswith(prefix):
+            return "postgresql+psycopg://" + url[len(prefix):]
+    return url
+
+
+DATABASE_URL = _normalize(settings.database_url)
+connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+engine = create_engine(DATABASE_URL, connect_args=connect_args, pool_pre_ping=not DATABASE_URL.startswith("sqlite"))
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
 
@@ -45,6 +54,7 @@ def init_db() -> None:
         if legacy:
             Base.metadata.create_all(bind=conn)
             _add_missing_columns(conn)
+            _legacy_fixes(conn)
             command.stamp(cfg, "head")
         else:
             command.upgrade(cfg, "head")
@@ -83,3 +93,23 @@ def _add_missing_columns(conn) -> None:
                 if isinstance(v, (list, dict)):
                     default = " DEFAULT '" + json.dumps(v) + "'"
             conn.execute(text(f'ALTER TABLE {table.name} ADD COLUMN "{col.name}" {ddl_type}{default}'))
+
+
+def _legacy_fixes(conn) -> None:
+    """Reprise d'une base créée sans Alembic par une ancienne version du site (create_all) :
+    - l'ancienne colonne booléenne users.email_verified devient la date email_verified_at (les adresses
+      déjà confirmées le restent), puis elle est supprimée (elle bloquerait la création des comptes) ;
+    - les index déclarés dans les modèles sont créés s'ils manquent."""
+    from sqlalchemy import inspect, text
+
+    insp = inspect(conn)
+    if insp.has_table("users"):
+        columns = {c["name"] for c in insp.get_columns("users")}
+        if "email_verified" in columns:
+            true = "1" if engine.dialect.name == "sqlite" else "TRUE"
+            conn.execute(text("UPDATE users SET email_verified_at = COALESCE(created_at, CURRENT_TIMESTAMP) "
+                              f"WHERE email_verified_at IS NULL AND email_verified = {true}"))
+            conn.execute(text("ALTER TABLE users DROP COLUMN email_verified"))
+    for table in Base.metadata.sorted_tables:
+        for index in table.indexes:
+            index.create(conn, checkfirst=True)

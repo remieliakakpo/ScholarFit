@@ -53,6 +53,20 @@ def _e(text: str) -> str:
 
 
 # ====================================================================== CV : PDF
+
+def personal_line(h: dict, lang: str) -> list[str]:
+    """« Date de naissance : 12/03/1999 », « Nationalité togolaise » (ou « Nationalité : Togo » sans adjectif connu)."""
+    out = []
+    if h.get("birth_date"):
+        out.append(f"Date of birth: {h['birth_date']}" if lang == "en" else f"Date de naissance : {h['birth_date']}")
+    nat = (h.get("nationality") or "").strip()
+    if nat:
+        if lang == "en":
+            out.append(f"Nationality: {nat}")
+        else:
+            out.append(f"Nationalité {nat}" if nat[:1].islower() else f"Nationalité : {nat}")
+    return out
+
 def cv_pdf(cv: dict) -> bytes:
     _register_fonts()
     from reportlab.lib.colors import HexColor
@@ -91,12 +105,8 @@ def cv_pdf(cv: dict) -> bytes:
         story.append(Paragraph("  |  ".join(_e(x) for x in contact), contact_st))
     if h.get("objective"):
         story.append(Paragraph(_e(h["objective"]), contact_st))
-    personal = []
     lang = cv.get("language", "fr")
-    if h.get("birth_date"):
-        personal.append(f"Date of birth {h['birth_date']}" if lang == "en" else f"Date de naissance {h['birth_date']}")
-    if h.get("nationality"):
-        personal.append((f"Nationality {h['nationality']}" if lang == "en" else f"Nationalité {h['nationality']}"))
+    personal = personal_line(h, lang)
     if personal:
         story.append(Paragraph("  |  ".join(_e(x) for x in personal), contact_st))
     story.append(Spacer(1, 5))
@@ -121,12 +131,20 @@ def cv_pdf(cv: dict) -> bytes:
     for sec in cv.get("sections", []):
         section(sec.get("title", ""))
         if sec.get("kind") == "list":
+            paras = []
             for it in sec.get("items", []):
                 cat, sep, rest = it.partition(" : ") if " : " in it else it.partition(": ")
                 if sep and sec.get("key") == "skills" and len(cat.split()) <= 5:
-                    add(Paragraph(f"<b>{_e(cat)}{_e(sep.rstrip())}</b> {_e(rest)}", item_st))
+                    paras.append(Paragraph(f"<b>{_e(cat)}{_e(sep.rstrip())}</b> {_e(rest)}", item_st))
                 else:
-                    add(Paragraph(_e(it), item_st))
+                    paras.append(Paragraph(_e(it), item_st))
+            # Une rubrique courte (compétences, langues) n'est jamais coupée entre deux pages
+            if len(paras) <= 8:
+                add(*paras)
+            else:
+                add(*paras[:2])
+                for x in paras[2:]:
+                    add(x)
             continue
         for e in sec.get("entries", []):
             block = []
@@ -164,57 +182,72 @@ def cv_pdf(cv: dict) -> bytes:
 
 # ====================================================================== lettre : PDF
 def letter_pdf(letter: dict) -> bytes:
+    """Lettre sur une seule page A4 : si le texte déborde, la taille du corps diminue par paliers
+    (11,5 pt jusqu'à 10 pt) avant d'accepter une deuxième page. La formule de politesse et la
+    signature restent toujours ensemble, jamais seules en haut d'une page."""
     _register_fonts()
+    for size in (11.5, 11, 10.5, 10):
+        pdf, pages = _letter_pdf(letter, size)
+        if pages <= 1:
+            return pdf
+    return pdf
+
+
+def _letter_pdf(letter: dict, size: float) -> tuple[bytes, int]:
     from reportlab.lib.colors import HexColor
     from reportlab.lib.enums import TA_JUSTIFY, TA_LEFT, TA_RIGHT
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib.units import mm
-    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
+    from reportlab.platypus import KeepTogether, Paragraph, SimpleDocTemplate, Spacer
 
+    k = size / 11.5  # espacements proportionnels à la taille du texte
     ink = HexColor("#111111")
-    base = ParagraphStyle("base", fontName="Caladea", fontSize=11.5, leading=16, textColor=ink)
-    body = ParagraphStyle("body", parent=base, alignment=TA_JUSTIFY, spaceAfter=9)
+    base = ParagraphStyle("base", fontName="Caladea", fontSize=size, leading=round(size * 1.39, 1), textColor=ink)
+    body = ParagraphStyle("body", parent=base, alignment=TA_JUSTIFY, spaceAfter=9 * k)
     right = ParagraphStyle("right", parent=base, alignment=TA_RIGHT)
     recip = ParagraphStyle("recip", parent=base, leftIndent=95 * mm, alignment=TA_LEFT)
     subject = ParagraphStyle("subject", parent=base, fontName="Caladea-bold")
 
     buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=25 * mm, rightMargin=25 * mm, topMargin=22 * mm, bottomMargin=20 * mm,
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=25 * mm, rightMargin=25 * mm, topMargin=(22 if size >= 11 else 18) * mm, bottomMargin=(20 if size >= 11 else 16) * mm,
                             title=letter.get("subject", "Lettre de motivation"), author=letter.get("signature", ""))
     style = letter.get("style", "fr")
     story = []
     sender = letter.get("sender", [])
     if sender:
         story.append(Paragraph("<br/>".join(_e(x) for x in sender), base))
-    story.append(Spacer(1, 14))
+    story.append(Spacer(1, 14 * k))
     if style == "fr":
         story.append(Paragraph("<br/>".join(_e(x) for x in letter.get("recipient", [])), recip))
-        story.append(Spacer(1, 14))
+        story.append(Spacer(1, 14 * k))
         story.append(Paragraph(_e(letter.get("place_date", "")), right))
     else:
         story.append(Paragraph(_e(letter.get("place_date", "")), base))
-        story.append(Spacer(1, 12))
+        story.append(Spacer(1, 12 * k))
         story.append(Paragraph("<br/>".join(_e(x) for x in letter.get("recipient", [])), base))
-    story.append(Spacer(1, 16))
+    story.append(Spacer(1, 16 * k))
     if letter.get("subject"):
         story.append(Paragraph(_e(letter["subject"]), subject))
-        story.append(Spacer(1, 12))
+        story.append(Spacer(1, 12 * k))
     story.append(Paragraph(_e(letter.get("salutation", "")), base))
-    story.append(Spacer(1, 9))
-    for para in letter.get("paragraphs", []):
-        story.append(Paragraph(_e(para), body))
+    story.append(Spacer(1, 9 * k))
+    paras = [Paragraph(_e(para), body) for para in letter.get("paragraphs", [])]
     if style == "fr":
-        story.append(Paragraph(_e(letter.get("closing", "")), body))
-        story.append(Spacer(1, 16))
-        story.append(Paragraph(_e(letter.get("signature", "")), ParagraphStyle("sig", parent=base, leftIndent=95 * mm)))
+        ending = [Paragraph(_e(letter.get("closing", "")), body), Spacer(1, 16 * k),
+                  Paragraph(_e(letter.get("signature", "")), ParagraphStyle("sig", parent=base, leftIndent=95 * mm))]
     else:
-        story.append(Spacer(1, 4))
-        story.append(Paragraph(_e(letter.get("closing", "")), base))
-        story.append(Spacer(1, 26))
-        story.append(Paragraph(_e(letter.get("signature", "")), base))
-    doc.build(story)
-    return buf.getvalue()
+        ending = [Spacer(1, 4 * k), Paragraph(_e(letter.get("closing", "")), base), Spacer(1, 26 * k), Paragraph(_e(letter.get("signature", "")), base)]
+    # Le dernier paragraphe, la formule de politesse et la signature forment un bloc insécable
+    last = paras[-1:] if paras else []
+    story += paras[:-1] + [KeepTogether(last + ending)]
+    pages = {"n": 0}
+
+    def count(canvas, _doc):
+        pages["n"] += 1
+
+    doc.build(story, onFirstPage=count, onLaterPages=count)
+    return buf.getvalue(), pages["n"]
 
 
 # ====================================================================== Word
@@ -290,11 +323,7 @@ def cv_docx(cv: dict) -> bytes:
     if h.get("objective"):
         _para(d, h["objective"], size=9.8, color="#555555", align=align)
     lang = cv.get("language", "fr")
-    personal = []
-    if h.get("birth_date"):
-        personal.append(f"Date of birth {h['birth_date']}" if lang == "en" else f"Date de naissance {h['birth_date']}")
-    if h.get("nationality"):
-        personal.append(f"Nationality {h['nationality']}" if lang == "en" else f"Nationalité {h['nationality']}")
+    personal = personal_line(h, lang)
     if personal:
         _para(d, "  |  ".join(personal), size=9.8, color="#555555", align=align)
 
@@ -362,7 +391,9 @@ def cv_docx(cv: dict) -> bytes:
 def letter_docx(letter: dict) -> bytes:
     from docx.enum.text import WD_ALIGN_PARAGRAPH
 
-    d = _docx_base("Cambria", 11.5, (22, 25, 20, 25))
+    words = sum(len(x.split()) for x in letter.get("paragraphs", []))
+    # Même règle que le PDF : une seule page, texte un peu plus petit pour une lettre longue
+    d = _docx_base("Cambria", 11.5 if words <= 330 else (11 if words <= 380 else 10.5), (22, 25, 20, 25))
     style = letter.get("style", "fr")
     for line in letter.get("sender", []):
         _para(d, line)
@@ -381,13 +412,18 @@ def letter_docx(letter: dict) -> bytes:
     if letter.get("subject"):
         _para(d, letter["subject"], bold=True, space_after=12)
     _para(d, letter.get("salutation", ""), space_after=9)
-    for para in letter.get("paragraphs", []):
-        _para(d, para, align=WD_ALIGN_PARAGRAPH.JUSTIFY, space_after=9)
+    paras = letter.get("paragraphs", [])
+    for i, para in enumerate(paras):
+        p = _para(d, para, align=WD_ALIGN_PARAGRAPH.JUSTIFY, space_after=9)
+        if i == len(paras) - 1:
+            p.paragraph_format.keep_with_next = True  # la signature ne part jamais seule sur une page
     if style == "fr":
-        _para(d, letter.get("closing", ""), align=WD_ALIGN_PARAGRAPH.JUSTIFY, space_after=24)
+        c = _para(d, letter.get("closing", ""), align=WD_ALIGN_PARAGRAPH.JUSTIFY, space_after=24)
+        c.paragraph_format.keep_with_next = True
         _para(d, letter.get("signature", ""), indent_mm=95)
     else:
-        _para(d, letter.get("closing", ""), space_before=4, space_after=30)
+        c = _para(d, letter.get("closing", ""), space_before=4, space_after=30)
+        c.paragraph_format.keep_with_next = True
         _para(d, letter.get("signature", ""))
     buf = io.BytesIO()
     d.save(buf)

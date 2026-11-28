@@ -42,7 +42,7 @@
       "assurance"
     ],
     "full_funding": false,
-    "deadline_month_day": "01-08",
+    "deadline_month_day": "01-06",
     "max_age": 30,
     "requirements": [
       "cv",
@@ -50,6 +50,10 @@
       "releves",
       "recommandation",
       "diplome"
+    ],
+    "application_languages": [
+      "fr",
+      "en"
     ],
     "apply_via": "etablissement",
     "eligibility": [
@@ -105,6 +109,9 @@
       "TOEFL": 80,
       "TestDaF": 4
     },
+    "application_languages": [
+      "en"
+    ],
     "apply_via": "direct",
     "kind": "bourse",
     "recurring": true,
@@ -148,7 +155,7 @@
       "frais"
     ],
     "full_funding": true,
-    "deadline_month_day": "08-31",
+    "deadline_month_day": "10-15",
     "max_age": 36,
     "requirements": [
       "cv",
@@ -161,6 +168,10 @@
       "IELTS": 6.0,
       "TOEFL": 80
     },
+    "min_experience_years": 2,
+    "application_languages": [
+      "en"
+    ],
     "apply_via": "universite",
     "kind": "bourse",
     "recurring": true,
@@ -206,6 +217,10 @@
       "recommandation",
       "releves"
     ],
+    "statement_type": "projet_recherche",
+    "application_languages": [
+      "en"
+    ],
     "apply_via": "direct",
     "kind": "bourse",
     "recurring": true,
@@ -241,12 +256,17 @@
       "logement"
     ],
     "full_funding": true,
-    "deadline_month_day": "11-04",
+    "deadline_month_day": "10-06",
     "requirements": [
       "lettre",
       "recommandation",
       "releves",
       "diplome"
+    ],
+    "min_experience_years": 2,
+    "statement_type": "essais",
+    "application_languages": [
+      "en"
     ],
     "apply_via": "direct",
     "eligibility": [
@@ -306,6 +326,10 @@
       "recommandation",
       "releves"
     ],
+    "statement_type": "essais",
+    "application_languages": [
+      "en"
+    ],
     "apply_via": "universite",
     "kind": "bourse",
     "recurring": true,
@@ -354,6 +378,10 @@
       "TOEFL": 80,
       "IELTS": 6.5
     },
+    "statement_type": "personal_statement",
+    "application_languages": [
+      "en"
+    ],
     "apply_via": "ambassade",
     "kind": "bourse",
     "recurring": true,
@@ -402,6 +430,10 @@
       "recommandation",
       "releves",
       "projet_recherche"
+    ],
+    "statement_type": "projet_recherche",
+    "application_languages": [
+      "en"
     ],
     "apply_via": "ambassade",
     "eligibility": [
@@ -634,6 +666,7 @@
       "recommandation",
       "releves"
     ],
+    "statement_type": "essais",
     "apply_via": "universite",
     "eligibility": [
       "Montrer une situation financière modeste et un engagement pour sa communauté."
@@ -672,6 +705,9 @@
       "lettre",
       "projet_recherche",
       "recommandation"
+    ],
+    "application_languages": [
+      "fr"
     ],
     "apply_via": "direct",
     "kind": "bourse",
@@ -714,6 +750,10 @@
       "lettre",
       "recommandation",
       "releves"
+    ],
+    "min_experience_years": 3,
+    "application_languages": [
+      "en"
     ],
     "apply_via": "direct",
     "kind": "bourse",
@@ -803,6 +843,11 @@
       "releves",
       "diplome"
     ],
+    "statement_type": "projet_recherche",
+    "application_languages": [
+      "en",
+      "fr"
+    ],
     "apply_via": "ambassade",
     "kind": "bourse",
     "recurring": true,
@@ -837,6 +882,9 @@
       "lettre",
       "recommandation",
       "projet_recherche"
+    ],
+    "application_languages": [
+      "en"
     ],
     "apply_via": "universite",
     "kind": "bourse",
@@ -886,6 +934,9 @@
       "DELF": 2,
       "TCF": 400
     },
+    "application_languages": [
+      "fr"
+    ],
     "apply_via": "ambassade",
     "kind": "bourse",
     "recurring": true,
@@ -1058,6 +1109,10 @@
       "IELTS": 7.5,
       "TOEFL": 110
     },
+    "statement_type": "personal_statement",
+    "application_languages": [
+      "en"
+    ],
     "apply_via": "universite",
     "kind": "bourse",
     "recurring": true,
@@ -1100,6 +1155,10 @@
     "language_tests": {
       "IELTS": 6.5
     },
+    "min_experience_years": 2,
+    "application_languages": [
+      "en"
+    ],
     "apply_via": "direct",
     "kind": "bourse",
     "recurring": true,
@@ -1295,6 +1354,11 @@
       "releves",
       "recommandation"
     ],
+    "statement_type": "essais",
+    "application_languages": [
+      "fr",
+      "en"
+    ],
     "apply_via": "universite",
     "kind": "bourse",
     "recurring": true,
@@ -1335,6 +1399,10 @@
       "lettre",
       "recommandation",
       "releves"
+    ],
+    "statement_type": "essais",
+    "application_languages": [
+      "en"
     ],
     "apply_via": "direct",
     "kind": "bourse",
@@ -1416,6 +1484,9 @@
       "releves",
       "lettre"
     ],
+    "application_languages": [
+      "fr"
+    ],
     "apply_via": "universite",
     "kind": "bourse",
     "recurring": true,
@@ -1472,6 +1543,11 @@
       "recommandation": "Deux références professionnelles sur le modèle du Swedish Institute.",
       "cv": "CV au format Europass recommandé."
     },
+    "min_experience_years": 3,
+    "statement_type": "essais",
+    "application_languages": [
+      "en"
+    ],
     "kind": "bourse",
     "recurring": true,
     "status": "a_verifier"
@@ -1635,6 +1711,10 @@
       "Avoir au moins deux ans d'expérience professionnelle dans le domaine du master.",
       "Résider et travailler dans un pays partenaire au moment de la candidature."
     ],
+    "min_experience_years": 2,
+    "application_languages": [
+      "fr"
+    ],
     "kind": "bourse",
     "recurring": true,
     "status": "a_verifier"
@@ -1689,6 +1769,10 @@
       "IELTS": 6.5,
       "TOEFL": 88
     },
+    "min_experience_years": 2,
+    "application_languages": [
+      "en"
+    ],
     "kind": "bourse",
     "recurring": true,
     "status": "a_verifier"
@@ -2095,6 +2179,10 @@
     "eligibility": [
       "Les règles d'âge et de nationalité dépendent de la circonscription Rhodes (ex. Afrique de l'Ouest, Afrique australe…)."
     ],
+    "statement_type": "personal_statement",
+    "application_languages": [
+      "en"
+    ],
     "kind": "bourse",
     "recurring": true,
     "status": "a_verifier"
@@ -2259,6 +2347,10 @@
       "Travailler dans une administration, une ONG ou un organisme lié au développement.",
       "S'engager à revenir travailler dans son pays."
     ],
+    "min_experience_years": 2,
+    "application_languages": [
+      "en"
+    ],
     "kind": "bourse",
     "recurring": true,
     "status": "a_verifier"
@@ -2361,6 +2453,11 @@
       "Au moins cinq ans d'expérience professionnelle à plein temps.",
       "Ne pas avoir étudié aux États-Unis plus de six mois récemment."
     ],
+    "min_experience_years": 5,
+    "statement_type": "essais",
+    "application_languages": [
+      "en"
+    ],
     "kind": "bourse",
     "recurring": true,
     "status": "a_verifier"
@@ -2406,6 +2503,10 @@
     "eligibility": [
       "Avoir obtenu sa licence il y a moins de sept ans.",
       "Postuler aussi à un programme de Stanford."
+    ],
+    "statement_type": "essais",
+    "application_languages": [
+      "en"
     ],
     "kind": "bourse",
     "recurring": true,
@@ -3050,6 +3151,10 @@
       "recommandation",
       "releves"
     ],
+    "statement_type": "essais",
+    "application_languages": [
+      "en"
+    ],
     "kind": "bourse",
     "recurring": true,
     "status": "a_verifier"
@@ -3093,6 +3198,10 @@
       "recommandation",
       "releves",
       "test_langue"
+    ],
+    "statement_type": "essais",
+    "application_languages": [
+      "en"
     ],
     "kind": "bourse",
     "recurring": true,
@@ -3162,6 +3271,10 @@
     ],
     "eligibility": [
       "Être fonctionnaire ou agent public dans son pays (selon la liste des organismes cibles)."
+    ],
+    "min_experience_years": 2,
+    "application_languages": [
+      "en"
     ],
     "kind": "bourse",
     "recurring": true,
@@ -3396,6 +3509,9 @@
       "releves",
       "test_langue"
     ],
+    "application_languages": [
+      "en"
+    ],
     "kind": "bourse",
     "recurring": true,
     "status": "a_verifier"
@@ -3535,6 +3651,10 @@
       "lettre",
       "recommandation",
       "releves"
+    ],
+    "min_experience_years": 2,
+    "application_languages": [
+      "en"
     ],
     "kind": "bourse",
     "recurring": true,
@@ -4664,6 +4784,1559 @@
     "requirements": [
       "cv"
     ],
+    "recurring": true,
+    "status": "a_verifier"
+  },
+  {
+    "title": "Bourses de l'Université Ashesi (Ghana)",
+    "organization": "Ashesi University",
+    "official_url": "https://www.ashesi.edu.gh/admissions/financial-aid/",
+    "summary": "Licence en informatique, ingénierie, gestion ou économie au Ghana. Une large part des étudiants reçoit une aide financière selon les besoins, dont des bourses complètes Mastercard Foundation.",
+    "levels": [
+      "BAC3"
+    ],
+    "study_countries": [
+      "GH"
+    ],
+    "eligible_nationalities": [
+      "AFRICA"
+    ],
+    "domains": [
+      "informatique",
+      "ingenierie",
+      "economie"
+    ],
+    "languages": [
+      "en"
+    ],
+    "coverage": [
+      "frais",
+      "logement",
+      "allocation"
+    ],
+    "full_funding": false,
+    "deadline_month_day": "03-15",
+    "apply_via": "universite",
+    "requirements": [
+      "releves",
+      "lettre",
+      "recommandation"
+    ],
+    "statement_type": "essais",
+    "application_languages": [
+      "en"
+    ],
+    "kind": "bourse",
+    "recurring": true,
+    "status": "a_verifier"
+  },
+  {
+    "title": "Bourses de l'African Leadership University",
+    "organization": "African Leadership University (ALU)",
+    "official_url": "https://www.alueducation.com/",
+    "summary": "Licence au Rwanda ou à Maurice centrée sur le leadership et l'entrepreneuriat, avec aides financières et bourses partielles ou complètes selon les besoins.",
+    "levels": [
+      "BAC3"
+    ],
+    "study_countries": [
+      "RW",
+      "MU"
+    ],
+    "eligible_nationalities": [
+      "AFRICA"
+    ],
+    "domains": [
+      "economie",
+      "informatique",
+      "relations_internationales",
+      "sciences_sociales"
+    ],
+    "languages": [
+      "en"
+    ],
+    "coverage": [
+      "frais"
+    ],
+    "full_funding": false,
+    "deadline_month_day": "05-31",
+    "apply_via": "universite",
+    "requirements": [
+      "releves",
+      "lettre"
+    ],
+    "statement_type": "essais",
+    "application_languages": [
+      "en"
+    ],
+    "kind": "bourse",
+    "recurring": true,
+    "status": "a_verifier"
+  },
+  {
+    "title": "Reach Oxford Scholarship",
+    "organization": "Université d'Oxford",
+    "official_url": "https://www.ox.ac.uk/admissions/undergraduate/fees-and-funding/oxford-support/reach-oxford-scholarship",
+    "summary": "Licence à Oxford entièrement financée pour des étudiants de pays à faible revenu qui ne peuvent pas étudier dans leur pays pour des raisons politiques ou financières.",
+    "levels": [
+      "BAC3"
+    ],
+    "study_countries": [
+      "GB"
+    ],
+    "eligible_nationalities": [
+      "DEVELOPING"
+    ],
+    "domains": [
+      "tous"
+    ],
+    "languages": [
+      "en"
+    ],
+    "coverage": [
+      "frais",
+      "allocation",
+      "voyage"
+    ],
+    "full_funding": true,
+    "deadline_month_day": "02-10",
+    "apply_via": "universite",
+    "requirements": [
+      "releves",
+      "lettre",
+      "test_langue"
+    ],
+    "statement_type": "personal_statement",
+    "application_languages": [
+      "en"
+    ],
+    "kind": "bourse",
+    "recurring": true,
+    "status": "a_verifier"
+  },
+  {
+    "title": "Full International Scholarships (Université de Westminster)",
+    "organization": "University of Westminster",
+    "official_url": "https://www.westminster.ac.uk/study/fees-and-funding/scholarships",
+    "summary": "Licence à Londres pour des étudiants de pays en développement : frais de scolarité, logement, allocation et billets d'avion.",
+    "levels": [
+      "BAC3"
+    ],
+    "study_countries": [
+      "GB"
+    ],
+    "eligible_nationalities": [
+      "DEVELOPING"
+    ],
+    "domains": [
+      "tous"
+    ],
+    "languages": [
+      "en"
+    ],
+    "coverage": [
+      "frais",
+      "logement",
+      "allocation",
+      "voyage"
+    ],
+    "full_funding": true,
+    "deadline_month_day": "05-01",
+    "apply_via": "universite",
+    "requirements": [
+      "releves",
+      "lettre",
+      "test_langue"
+    ],
+    "statement_type": "personal_statement",
+    "application_languages": [
+      "en"
+    ],
+    "kind": "bourse",
+    "recurring": true,
+    "status": "a_verifier"
+  },
+  {
+    "title": "Karen McKellin International Leader of Tomorrow Award (UBC)",
+    "organization": "University of British Columbia",
+    "official_url": "https://you.ubc.ca/financial-planning/scholarships-awards-international-students/",
+    "summary": "Licence à Vancouver pour des élèves brillants et engagés qui ont besoin d'une aide financière ; le montant couvre les frais et le coût de la vie selon les besoins.",
+    "levels": [
+      "BAC3"
+    ],
+    "study_countries": [
+      "CA"
+    ],
+    "eligible_nationalities": [
+      "ALL"
+    ],
+    "excluded_nationalities": [
+      "CA"
+    ],
+    "domains": [
+      "tous"
+    ],
+    "languages": [
+      "en"
+    ],
+    "coverage": [
+      "frais",
+      "allocation"
+    ],
+    "full_funding": true,
+    "deadline_month_day": "11-15",
+    "apply_via": "universite",
+    "requirements": [
+      "releves",
+      "lettre",
+      "recommandation",
+      "test_langue"
+    ],
+    "statement_type": "essais",
+    "application_languages": [
+      "en"
+    ],
+    "kind": "bourse",
+    "recurring": true,
+    "status": "a_verifier"
+  },
+  {
+    "title": "Bourses d'exemption de l'Université de Montréal",
+    "organization": "Université de Montréal",
+    "official_url": "https://admission.umontreal.ca/",
+    "summary": "Réduction des droits de scolarité majorés pour les étudiants internationaux admis en licence, maîtrise ou doctorat, accordée au mérite.",
+    "levels": [
+      "BAC3",
+      "BAC5",
+      "BAC7"
+    ],
+    "study_countries": [
+      "CA"
+    ],
+    "eligible_nationalities": [
+      "ALL"
+    ],
+    "excluded_nationalities": [
+      "CA"
+    ],
+    "domains": [
+      "tous"
+    ],
+    "languages": [
+      "fr"
+    ],
+    "coverage": [
+      "frais"
+    ],
+    "full_funding": false,
+    "deadline_month_day": "02-01",
+    "apply_via": "universite",
+    "requirements": [
+      "releves",
+      "lettre"
+    ],
+    "application_languages": [
+      "fr"
+    ],
+    "kind": "bourse",
+    "recurring": true,
+    "status": "a_verifier"
+  },
+  {
+    "title": "Aide financière de Harvard College",
+    "organization": "Harvard University",
+    "official_url": "https://college.harvard.edu/financial-aid",
+    "summary": "Licence à Harvard : les admissions ne tiennent pas compte des moyens de la famille, et l'université couvre l'intégralité des besoins financiers des admis, y compris internationaux.",
+    "levels": [
+      "BAC3"
+    ],
+    "study_countries": [
+      "US"
+    ],
+    "eligible_nationalities": [
+      "ALL"
+    ],
+    "domains": [
+      "tous"
+    ],
+    "languages": [
+      "en"
+    ],
+    "coverage": [
+      "frais",
+      "logement",
+      "allocation",
+      "voyage"
+    ],
+    "full_funding": true,
+    "deadline_month_day": "01-01",
+    "apply_via": "universite",
+    "requirements": [
+      "releves",
+      "lettre",
+      "recommandation",
+      "test_langue"
+    ],
+    "statement_type": "essais",
+    "application_languages": [
+      "en"
+    ],
+    "kind": "bourse",
+    "recurring": true,
+    "status": "a_verifier"
+  },
+  {
+    "title": "Aide financière de l'Université Yale",
+    "organization": "Yale University",
+    "official_url": "https://finaid.yale.edu/",
+    "summary": "Licence à Yale : admission sans considération des moyens financiers, y compris pour les étudiants internationaux, et prise en charge complète des besoins démontrés.",
+    "levels": [
+      "BAC3"
+    ],
+    "study_countries": [
+      "US"
+    ],
+    "eligible_nationalities": [
+      "ALL"
+    ],
+    "domains": [
+      "tous"
+    ],
+    "languages": [
+      "en"
+    ],
+    "coverage": [
+      "frais",
+      "logement",
+      "allocation"
+    ],
+    "full_funding": true,
+    "deadline_month_day": "01-02",
+    "apply_via": "universite",
+    "requirements": [
+      "releves",
+      "lettre",
+      "recommandation",
+      "test_langue"
+    ],
+    "statement_type": "essais",
+    "application_languages": [
+      "en"
+    ],
+    "kind": "bourse",
+    "recurring": true,
+    "status": "a_verifier"
+  },
+  {
+    "title": "Bourses KNB (gouvernement indonésien)",
+    "organization": "Ministère indonésien de l'Éducation",
+    "official_url": "https://knb.kemdikbud.go.id/",
+    "summary": "Licence, master ou doctorat en Indonésie pour des étudiants de pays en développement, avec une année de langue indonésienne, frais, logement et allocation.",
+    "levels": [
+      "BAC3",
+      "BAC5",
+      "BAC7"
+    ],
+    "study_countries": [
+      "ID"
+    ],
+    "eligible_nationalities": [
+      "DEVELOPING"
+    ],
+    "domains": [
+      "tous"
+    ],
+    "languages": [
+      "en",
+      "id"
+    ],
+    "coverage": [
+      "frais",
+      "logement",
+      "allocation",
+      "voyage"
+    ],
+    "full_funding": true,
+    "deadline_month_day": "03-15",
+    "apply_via": "direct",
+    "requirements": [
+      "cv",
+      "lettre",
+      "recommandation",
+      "releves",
+      "test_langue"
+    ],
+    "application_languages": [
+      "en"
+    ],
+    "kind": "bourse",
+    "recurring": true,
+    "status": "a_verifier"
+  },
+  {
+    "title": "Bourses du gouvernement roumain",
+    "organization": "Ministère roumain des Affaires étrangères",
+    "official_url": "https://www.studyinromania.gov.ro/",
+    "summary": "Licence, master ou doctorat en Roumanie pour des étudiants hors Union européenne, avec frais de scolarité, logement et allocation mensuelle.",
+    "levels": [
+      "BAC3",
+      "BAC5",
+      "BAC7"
+    ],
+    "study_countries": [
+      "RO"
+    ],
+    "eligible_nationalities": [
+      "ALL"
+    ],
+    "excluded_nationalities": [
+      "EU"
+    ],
+    "domains": [
+      "tous"
+    ],
+    "languages": [
+      "ro",
+      "en",
+      "fr"
+    ],
+    "coverage": [
+      "frais",
+      "logement",
+      "allocation"
+    ],
+    "full_funding": true,
+    "deadline_month_day": "03-15",
+    "apply_via": "direct",
+    "requirements": [
+      "cv",
+      "lettre",
+      "releves",
+      "diplome"
+    ],
+    "kind": "bourse",
+    "recurring": true,
+    "status": "a_verifier"
+  },
+  {
+    "title": "Wells Mountain Initiative Scholars",
+    "organization": "Wells Mountain Initiative",
+    "official_url": "https://wellsmountaininitiative.org/",
+    "summary": "Aide aux études de licence dans son propre pays ou sa région pour des étudiants de pays en développement engagés dans leur communauté.",
+    "levels": [
+      "BAC3"
+    ],
+    "study_countries": [],
+    "eligible_nationalities": [
+      "DEVELOPING"
+    ],
+    "domains": [
+      "tous"
+    ],
+    "languages": [
+      "en"
+    ],
+    "coverage": [
+      "frais"
+    ],
+    "full_funding": false,
+    "deadline_month_day": "03-01",
+    "apply_via": "direct",
+    "requirements": [
+      "releves",
+      "lettre",
+      "recommandation"
+    ],
+    "statement_type": "essais",
+    "application_languages": [
+      "en"
+    ],
+    "kind": "bourse",
+    "recurring": true,
+    "status": "a_verifier"
+  },
+  {
+    "title": "Bourses de langue chinoise (Institut Confucius)",
+    "organization": "Fondation chinoise pour l'éducation internationale (CIEF)",
+    "official_url": "https://cis.chinese.cn/",
+    "summary": "Séjour d'un semestre ou d'un an, ou licence et master en enseignement du chinois en Chine, avec frais, logement et allocation.",
+    "levels": [
+      "BAC",
+      "BAC3",
+      "BAC5"
+    ],
+    "study_countries": [
+      "CN"
+    ],
+    "eligible_nationalities": [
+      "ALL"
+    ],
+    "excluded_nationalities": [
+      "CN"
+    ],
+    "domains": [
+      "langues",
+      "education"
+    ],
+    "languages": [
+      "zh",
+      "en"
+    ],
+    "coverage": [
+      "frais",
+      "logement",
+      "allocation",
+      "assurance"
+    ],
+    "full_funding": true,
+    "deadline_month_day": "04-15",
+    "apply_via": "direct",
+    "requirements": [
+      "releves",
+      "recommandation",
+      "test_langue"
+    ],
+    "kind": "bourse",
+    "recurring": true,
+    "status": "a_verifier"
+  },
+  {
+    "title": "Darmasiswa : un an de langue et culture en Indonésie",
+    "organization": "Ministère indonésien de l'Éducation",
+    "official_url": "https://darmasiswa.kemdikbud.go.id/",
+    "summary": "Programme non diplômant d'un an pour apprendre l'indonésien, les arts et la culture dans une université indonésienne, avec allocation mensuelle.",
+    "levels": [
+      "BAC",
+      "BAC3"
+    ],
+    "study_countries": [
+      "ID"
+    ],
+    "eligible_nationalities": [
+      "ALL"
+    ],
+    "excluded_nationalities": [
+      "ID"
+    ],
+    "domains": [
+      "langues",
+      "arts"
+    ],
+    "languages": [
+      "en"
+    ],
+    "coverage": [
+      "frais",
+      "allocation"
+    ],
+    "full_funding": false,
+    "max_age": 35,
+    "deadline_month_day": "02-28",
+    "apply_via": "direct",
+    "requirements": [
+      "cv",
+      "lettre",
+      "diplome"
+    ],
+    "kind": "bourse",
+    "recurring": true,
+    "status": "a_verifier"
+  },
+  {
+    "title": "Bourses de l'Université Senghor (Alexandrie)",
+    "organization": "Université Senghor (Agence de la Francophonie)",
+    "official_url": "https://www.usenghor.org/",
+    "summary": "Master professionnel en développement (santé, environnement, gestion, culture) à Alexandrie pour des cadres d'Afrique francophone, avec bourse couvrant frais, voyage et séjour.",
+    "levels": [
+      "BAC5"
+    ],
+    "study_countries": [
+      "EG"
+    ],
+    "eligible_nationalities": [
+      "FRANCOPHONIE"
+    ],
+    "domains": [
+      "medecine",
+      "energie",
+      "economie",
+      "education",
+      "arts",
+      "relations_internationales"
+    ],
+    "languages": [
+      "fr"
+    ],
+    "coverage": [
+      "frais",
+      "voyage",
+      "logement",
+      "allocation"
+    ],
+    "full_funding": true,
+    "max_age": 40,
+    "min_experience_years": 1,
+    "deadline_month_day": "01-31",
+    "apply_via": "direct",
+    "requirements": [
+      "cv",
+      "lettre",
+      "diplome",
+      "releves"
+    ],
+    "application_languages": [
+      "fr"
+    ],
+    "kind": "bourse",
+    "recurring": true,
+    "status": "a_verifier"
+  },
+  {
+    "title": "Bourses de Wallonie-Bruxelles International (WBI)",
+    "organization": "Wallonie-Bruxelles International",
+    "official_url": "https://www.wbi.be/",
+    "summary": "Bourses d'études de spécialisation et de recherche en Belgique francophone pour des ressortissants de pays partenaires de la Fédération Wallonie-Bruxelles.",
+    "levels": [
+      "BAC5",
+      "BAC7"
+    ],
+    "study_countries": [
+      "BE"
+    ],
+    "eligible_nationalities": [
+      "FRANCOPHONIE"
+    ],
+    "domains": [
+      "tous"
+    ],
+    "languages": [
+      "fr"
+    ],
+    "coverage": [
+      "allocation",
+      "assurance"
+    ],
+    "full_funding": false,
+    "deadline_month_day": "03-01",
+    "apply_via": "direct",
+    "requirements": [
+      "cv",
+      "lettre",
+      "projet_recherche",
+      "recommandation"
+    ],
+    "application_languages": [
+      "fr"
+    ],
+    "kind": "bourse",
+    "recurring": true,
+    "status": "a_verifier"
+  },
+  {
+    "title": "Bourses Paris-Saclay International Master's Scholarship",
+    "organization": "Université Paris-Saclay",
+    "official_url": "https://www.universite-paris-saclay.fr/en/admission/bourses-et-aides-financieres",
+    "summary": "Bourse au mérite pour les étudiants internationaux admis dans un master de l'Université Paris-Saclay, versée pendant l'année universitaire.",
+    "levels": [
+      "BAC5"
+    ],
+    "study_countries": [
+      "FR"
+    ],
+    "eligible_nationalities": [
+      "ALL"
+    ],
+    "excluded_nationalities": [
+      "FR"
+    ],
+    "domains": [
+      "tous"
+    ],
+    "languages": [
+      "fr",
+      "en"
+    ],
+    "amount": 10000,
+    "currency": "EUR",
+    "amount_period": "an",
+    "coverage": [
+      "allocation"
+    ],
+    "full_funding": false,
+    "deadline_month_day": "01-15",
+    "apply_via": "universite",
+    "requirements": [
+      "cv",
+      "lettre",
+      "releves",
+      "recommandation"
+    ],
+    "application_languages": [
+      "fr",
+      "en"
+    ],
+    "kind": "bourse",
+    "recurring": true,
+    "status": "a_verifier"
+  },
+  {
+    "title": "Bourses Ampère (ENS de Lyon)",
+    "organization": "École normale supérieure de Lyon",
+    "official_url": "https://www.ens-lyon.fr/",
+    "summary": "Bourse d'excellence pour suivre un master de sciences ou de lettres à l'ENS de Lyon, avec allocation mensuelle et logement facilité.",
+    "levels": [
+      "BAC5"
+    ],
+    "study_countries": [
+      "FR"
+    ],
+    "eligible_nationalities": [
+      "ALL"
+    ],
+    "excluded_nationalities": [
+      "FR"
+    ],
+    "domains": [
+      "tous"
+    ],
+    "languages": [
+      "fr",
+      "en"
+    ],
+    "amount": 1000,
+    "currency": "EUR",
+    "amount_period": "mois",
+    "coverage": [
+      "allocation"
+    ],
+    "full_funding": false,
+    "deadline_month_day": "12-15",
+    "apply_via": "universite",
+    "requirements": [
+      "cv",
+      "lettre",
+      "releves",
+      "recommandation"
+    ],
+    "application_languages": [
+      "fr",
+      "en"
+    ],
+    "kind": "bourse",
+    "recurring": true,
+    "status": "a_verifier"
+  },
+  {
+    "title": "Bourses d'excellence HEC Paris",
+    "organization": "HEC Paris",
+    "official_url": "https://www.hec.edu/en/master-s-programs/financing",
+    "summary": "Bourses au mérite et sur critères sociaux pour les étudiants internationaux admis dans un master d'HEC Paris.",
+    "levels": [
+      "BAC5"
+    ],
+    "study_countries": [
+      "FR"
+    ],
+    "eligible_nationalities": [
+      "ALL"
+    ],
+    "domains": [
+      "economie"
+    ],
+    "languages": [
+      "en",
+      "fr"
+    ],
+    "coverage": [
+      "frais"
+    ],
+    "full_funding": false,
+    "deadline_month_day": "03-01",
+    "apply_via": "universite",
+    "requirements": [
+      "cv",
+      "lettre",
+      "releves",
+      "recommandation",
+      "test_langue"
+    ],
+    "kind": "bourse",
+    "recurring": true,
+    "status": "a_verifier"
+  },
+  {
+    "title": "EPFL Excellence Fellowships",
+    "organization": "École polytechnique fédérale de Lausanne",
+    "official_url": "https://www.epfl.ch/education/master/",
+    "summary": "Bourse d'excellence pour un master à l'EPFL, couvrant une grande partie du coût de la vie, réservée aux meilleurs dossiers.",
+    "levels": [
+      "BAC5"
+    ],
+    "study_countries": [
+      "CH"
+    ],
+    "eligible_nationalities": [
+      "ALL"
+    ],
+    "domains": [
+      "ingenierie",
+      "informatique",
+      "mathematiques",
+      "physique",
+      "chimie",
+      "biologie",
+      "energie"
+    ],
+    "languages": [
+      "en",
+      "fr"
+    ],
+    "amount": 10000,
+    "currency": "CHF",
+    "amount_period": "semestre",
+    "coverage": [
+      "allocation",
+      "frais"
+    ],
+    "full_funding": false,
+    "deadline_month_day": "12-15",
+    "apply_via": "universite",
+    "requirements": [
+      "cv",
+      "lettre",
+      "releves",
+      "recommandation"
+    ],
+    "kind": "bourse",
+    "recurring": true,
+    "status": "a_verifier"
+  },
+  {
+    "title": "Bourses d'excellence de master de l'Université de Genève",
+    "organization": "Université de Genève",
+    "official_url": "https://www.unige.ch/sciences/en/enseignements/formations/masters/excellencemasterfellowships/",
+    "summary": "Bourses pour des étudiants excellents admis dans un master de la Faculté des sciences de Genève, couvrant les frais et le coût de la vie.",
+    "levels": [
+      "BAC5"
+    ],
+    "study_countries": [
+      "CH"
+    ],
+    "eligible_nationalities": [
+      "ALL"
+    ],
+    "domains": [
+      "mathematiques",
+      "physique",
+      "chimie",
+      "biologie",
+      "informatique"
+    ],
+    "languages": [
+      "fr",
+      "en"
+    ],
+    "coverage": [
+      "frais",
+      "allocation"
+    ],
+    "full_funding": true,
+    "deadline_month_day": "03-15",
+    "apply_via": "universite",
+    "requirements": [
+      "cv",
+      "lettre",
+      "releves",
+      "recommandation"
+    ],
+    "kind": "bourse",
+    "recurring": true,
+    "status": "a_verifier"
+  },
+  {
+    "title": "Leiden University Excellence Scholarship (LExS)",
+    "organization": "Université de Leyde",
+    "official_url": "https://www.universiteitleiden.nl/en/scholarships",
+    "summary": "Réduction partielle ou totale des frais de scolarité pour des étudiants hors Union européenne admis en master à Leyde.",
+    "levels": [
+      "BAC5"
+    ],
+    "study_countries": [
+      "NL"
+    ],
+    "eligible_nationalities": [
+      "ALL"
+    ],
+    "excluded_nationalities": [
+      "EU"
+    ],
+    "domains": [
+      "tous"
+    ],
+    "languages": [
+      "en"
+    ],
+    "coverage": [
+      "frais"
+    ],
+    "full_funding": false,
+    "deadline_month_day": "02-01",
+    "apply_via": "universite",
+    "requirements": [
+      "cv",
+      "lettre",
+      "releves",
+      "test_langue"
+    ],
+    "application_languages": [
+      "en"
+    ],
+    "kind": "bourse",
+    "recurring": true,
+    "status": "a_verifier"
+  },
+  {
+    "title": "University of Twente Scholarship (UTS)",
+    "organization": "Université de Twente",
+    "official_url": "https://www.utwente.nl/en/education/scholarship-finder/",
+    "summary": "Bourse au mérite pour un master à l'Université de Twente, de la réduction des frais à une prise en charge plus large selon le dossier.",
+    "levels": [
+      "BAC5"
+    ],
+    "study_countries": [
+      "NL"
+    ],
+    "eligible_nationalities": [
+      "ALL"
+    ],
+    "excluded_nationalities": [
+      "EU"
+    ],
+    "domains": [
+      "ingenierie",
+      "informatique",
+      "sciences_sociales",
+      "economie"
+    ],
+    "languages": [
+      "en"
+    ],
+    "coverage": [
+      "frais",
+      "allocation"
+    ],
+    "full_funding": false,
+    "deadline_month_day": "02-01",
+    "apply_via": "universite",
+    "requirements": [
+      "cv",
+      "lettre",
+      "releves",
+      "test_langue"
+    ],
+    "application_languages": [
+      "en"
+    ],
+    "kind": "bourse",
+    "recurring": true,
+    "status": "a_verifier"
+  },
+  {
+    "title": "Amsterdam Excellence Scholarship",
+    "organization": "Université d'Amsterdam",
+    "official_url": "https://www.uva.nl/en/education/fees-and-funding/scholarships-and-loans/amsterdam-excellence-scholarship/",
+    "summary": "Bourse complète (frais et coût de la vie) pour des étudiants exceptionnels hors Union européenne admis dans un master de l'Université d'Amsterdam.",
+    "levels": [
+      "BAC5"
+    ],
+    "study_countries": [
+      "NL"
+    ],
+    "eligible_nationalities": [
+      "ALL"
+    ],
+    "excluded_nationalities": [
+      "EU"
+    ],
+    "domains": [
+      "tous"
+    ],
+    "languages": [
+      "en"
+    ],
+    "amount": 25000,
+    "currency": "EUR",
+    "amount_period": "an",
+    "coverage": [
+      "frais",
+      "allocation"
+    ],
+    "full_funding": true,
+    "deadline_month_day": "01-15",
+    "apply_via": "universite",
+    "requirements": [
+      "cv",
+      "lettre",
+      "releves",
+      "recommandation",
+      "test_langue"
+    ],
+    "application_languages": [
+      "en"
+    ],
+    "kind": "bourse",
+    "recurring": true,
+    "status": "a_verifier"
+  },
+  {
+    "title": "Justus & Louise van Effen Excellence Scholarship (TU Delft)",
+    "organization": "TU Delft",
+    "official_url": "https://www.tudelft.nl/en/education/practical-matters/scholarships",
+    "summary": "Bourse complète pour un master d'ingénierie à Delft, réservée aux meilleurs candidats internationaux.",
+    "levels": [
+      "BAC5"
+    ],
+    "study_countries": [
+      "NL"
+    ],
+    "eligible_nationalities": [
+      "ALL"
+    ],
+    "excluded_nationalities": [
+      "EU"
+    ],
+    "domains": [
+      "ingenierie",
+      "informatique",
+      "energie",
+      "mathematiques",
+      "physique"
+    ],
+    "languages": [
+      "en"
+    ],
+    "coverage": [
+      "frais",
+      "allocation"
+    ],
+    "full_funding": true,
+    "deadline_month_day": "12-01",
+    "apply_via": "universite",
+    "requirements": [
+      "cv",
+      "lettre",
+      "releves",
+      "recommandation",
+      "test_langue"
+    ],
+    "application_languages": [
+      "en"
+    ],
+    "kind": "bourse",
+    "recurring": true,
+    "status": "a_verifier"
+  },
+  {
+    "title": "Weidenfeld-Hoffmann Scholarships (Oxford)",
+    "organization": "Weidenfeld-Hoffmann Trust / Université d'Oxford",
+    "official_url": "https://www.whtrust.org/",
+    "summary": "Master à Oxford entièrement financé, avec un programme de leadership, pour des diplômés de pays à revenu faible ou intermédiaire qui veulent servir leur pays.",
+    "levels": [
+      "BAC5"
+    ],
+    "study_countries": [
+      "GB"
+    ],
+    "eligible_nationalities": [
+      "DEVELOPING"
+    ],
+    "domains": [
+      "tous"
+    ],
+    "languages": [
+      "en"
+    ],
+    "coverage": [
+      "frais",
+      "allocation",
+      "voyage"
+    ],
+    "full_funding": true,
+    "deadline_month_day": "01-08",
+    "apply_via": "universite",
+    "requirements": [
+      "cv",
+      "lettre",
+      "recommandation",
+      "releves",
+      "test_langue"
+    ],
+    "statement_type": "essais",
+    "application_languages": [
+      "en"
+    ],
+    "kind": "bourse",
+    "recurring": true,
+    "status": "a_verifier"
+  },
+  {
+    "title": "Commonwealth Master's Scholarships",
+    "organization": "Commonwealth Scholarship Commission (CSC)",
+    "official_url": "https://cscuk.fcdo.gov.uk/scholarships/commonwealth-masters-scholarships/",
+    "summary": "Master d'un an au Royaume-Uni pour des ressortissants de pays du Commonwealth à revenu faible ou intermédiaire, présentés par leur agence nationale de nomination.",
+    "levels": [
+      "BAC5"
+    ],
+    "study_countries": [
+      "GB"
+    ],
+    "eligible_nationalities": [
+      "COMMONWEALTH"
+    ],
+    "domains": [
+      "tous"
+    ],
+    "languages": [
+      "en"
+    ],
+    "coverage": [
+      "frais",
+      "allocation",
+      "voyage"
+    ],
+    "full_funding": true,
+    "deadline_month_day": "10-15",
+    "apply_via": "nomination",
+    "requirements": [
+      "lettre",
+      "recommandation",
+      "releves"
+    ],
+    "statement_type": "essais",
+    "application_languages": [
+      "en"
+    ],
+    "kind": "bourse",
+    "recurring": true,
+    "status": "a_verifier"
+  },
+  {
+    "title": "Programme de bourses Japon-Banque africaine de développement",
+    "organization": "Banque africaine de développement / Gouvernement du Japon",
+    "official_url": "https://www.afdb.org/en/about-us/careers/japan-africa-dream-scholarship-jads-program",
+    "summary": "Master dans une université partenaire hors du pays d'origine (énergie, agriculture, santé, ingénierie) pour de jeunes professionnels africains qui s'engagent à rentrer.",
+    "levels": [
+      "BAC5"
+    ],
+    "study_countries": [],
+    "eligible_nationalities": [
+      "AFRICA"
+    ],
+    "domains": [
+      "energie",
+      "agriculture",
+      "medecine",
+      "ingenierie",
+      "economie"
+    ],
+    "languages": [
+      "en",
+      "fr"
+    ],
+    "coverage": [
+      "frais",
+      "allocation",
+      "voyage",
+      "assurance"
+    ],
+    "full_funding": true,
+    "max_age": 35,
+    "min_experience_years": 1,
+    "deadline_month_day": "03-31",
+    "apply_via": "direct",
+    "requirements": [
+      "cv",
+      "lettre",
+      "recommandation",
+      "releves",
+      "lettre_admission"
+    ],
+    "kind": "bourse",
+    "recurring": true,
+    "status": "a_verifier"
+  },
+  {
+    "title": "Bourses de la Fondation Konrad Adenauer pour étudiants étrangers",
+    "organization": "Konrad-Adenauer-Stiftung",
+    "official_url": "https://www.kas.de/en/web/begabtenfoerderung-und-kultur/foreign-students",
+    "summary": "Bourse mensuelle pour un master ou un doctorat en Allemagne, accompagnée de séminaires, pour des étudiants engagés dans la vie publique.",
+    "levels": [
+      "BAC5",
+      "BAC7"
+    ],
+    "study_countries": [
+      "DE"
+    ],
+    "eligible_nationalities": [
+      "ALL"
+    ],
+    "excluded_nationalities": [
+      "EU"
+    ],
+    "domains": [
+      "tous"
+    ],
+    "languages": [
+      "de",
+      "en"
+    ],
+    "coverage": [
+      "allocation",
+      "assurance"
+    ],
+    "full_funding": false,
+    "deadline_month_day": "07-15",
+    "apply_via": "direct",
+    "requirements": [
+      "cv",
+      "lettre",
+      "recommandation",
+      "releves",
+      "test_langue"
+    ],
+    "kind": "bourse",
+    "recurring": true,
+    "status": "a_verifier"
+  },
+  {
+    "title": "Bourses de la Fondation Friedrich Ebert pour étudiants étrangers",
+    "organization": "Friedrich-Ebert-Stiftung",
+    "official_url": "https://www.fes.de/studienfoerderung",
+    "summary": "Bourse pour un master ou un doctorat dans une université allemande, pour des étudiants engagés socialement, avec séminaires et réseau.",
+    "levels": [
+      "BAC5",
+      "BAC7"
+    ],
+    "study_countries": [
+      "DE"
+    ],
+    "eligible_nationalities": [
+      "ALL"
+    ],
+    "domains": [
+      "tous"
+    ],
+    "languages": [
+      "de"
+    ],
+    "coverage": [
+      "allocation"
+    ],
+    "full_funding": false,
+    "deadline_month_day": "04-30",
+    "apply_via": "direct",
+    "requirements": [
+      "cv",
+      "lettre",
+      "recommandation",
+      "releves",
+      "test_langue"
+    ],
+    "kind": "bourse",
+    "recurring": true,
+    "status": "a_verifier"
+  },
+  {
+    "title": "Mandela Washington Fellowship (YALI)",
+    "organization": "Département d'État des États-Unis",
+    "official_url": "https://www.mandelawashingtonfellowship.org/",
+    "summary": "Six semaines de formation au leadership dans une université américaine pour de jeunes leaders africains de 25 à 35 ans, tous frais payés.",
+    "levels": [
+      "BAC3",
+      "BAC5"
+    ],
+    "study_countries": [
+      "US"
+    ],
+    "eligible_nationalities": [
+      "AFRICA"
+    ],
+    "domains": [
+      "tous"
+    ],
+    "languages": [
+      "en"
+    ],
+    "coverage": [
+      "voyage",
+      "logement",
+      "allocation"
+    ],
+    "full_funding": true,
+    "max_age": 35,
+    "min_experience_years": 1,
+    "deadline_month_day": "09-30",
+    "apply_via": "direct",
+    "requirements": [
+      "cv",
+      "lettre"
+    ],
+    "statement_type": "essais",
+    "application_languages": [
+      "en"
+    ],
+    "kind": "bourse",
+    "recurring": true,
+    "status": "a_verifier"
+  },
+  {
+    "title": "Mo Ibrahim Foundation Leadership Fellowships",
+    "organization": "Fondation Mo Ibrahim",
+    "official_url": "https://mo.ibrahim.foundation/fellowships",
+    "summary": "Placement d'un an dans une institution internationale (BAD, CEA, ITC) pour de jeunes professionnels africains, avec rémunération.",
+    "levels": [
+      "BAC5"
+    ],
+    "study_countries": [],
+    "eligible_nationalities": [
+      "AFRICA"
+    ],
+    "domains": [
+      "economie",
+      "relations_internationales",
+      "droit",
+      "sciences_sociales"
+    ],
+    "languages": [
+      "en",
+      "fr"
+    ],
+    "coverage": [
+      "allocation",
+      "voyage"
+    ],
+    "full_funding": true,
+    "max_age": 40,
+    "min_experience_years": 7,
+    "deadline_month_day": "02-28",
+    "apply_via": "direct",
+    "requirements": [
+      "cv",
+      "lettre",
+      "recommandation"
+    ],
+    "kind": "bourse",
+    "recurring": true,
+    "status": "a_verifier"
+  },
+  {
+    "title": "Programme de mobilité académique intra-africaine",
+    "organization": "Union européenne / Commission de l'Union africaine",
+    "official_url": "https://www.eacea.ec.europa.eu/grants/2021-2027/intra-africa-academic-mobility-scheme_en",
+    "summary": "Masters et doctorats dans une autre université africaine membre d'un partenariat, avec frais, voyage et allocation mensuelle.",
+    "levels": [
+      "BAC5",
+      "BAC7"
+    ],
+    "study_countries": [
+      "KE",
+      "GH",
+      "NG",
+      "SN",
+      "ZA",
+      "RW",
+      "ET",
+      "UG",
+      "TZ",
+      "CM",
+      "CI",
+      "BJ",
+      "BF",
+      "MA",
+      "EG"
+    ],
+    "eligible_nationalities": [
+      "AFRICA"
+    ],
+    "domains": [
+      "tous"
+    ],
+    "languages": [
+      "en",
+      "fr"
+    ],
+    "coverage": [
+      "frais",
+      "allocation",
+      "voyage",
+      "assurance"
+    ],
+    "full_funding": true,
+    "deadline_month_day": "03-31",
+    "apply_via": "universite",
+    "requirements": [
+      "cv",
+      "lettre",
+      "releves",
+      "recommandation"
+    ],
+    "kind": "bourse",
+    "recurring": true,
+    "status": "a_verifier"
+  },
+  {
+    "title": "Bourses doctorales RSIF (PASET)",
+    "organization": "Partenariat pour les compétences en sciences appliquées, ingénierie et technologie (PASET)",
+    "official_url": "https://www.rsif-paset.org/",
+    "summary": "Doctorat en sciences appliquées et technologies dans une université africaine hôte, avec un séjour de recherche dans une institution partenaire.",
+    "levels": [
+      "BAC7"
+    ],
+    "study_countries": [
+      "KE",
+      "RW",
+      "NG",
+      "GH",
+      "CI",
+      "TZ",
+      "UG",
+      "ET",
+      "BJ"
+    ],
+    "eligible_nationalities": [
+      "AFRICA"
+    ],
+    "domains": [
+      "informatique",
+      "energie",
+      "agriculture",
+      "ingenierie",
+      "medecine"
+    ],
+    "languages": [
+      "en",
+      "fr"
+    ],
+    "coverage": [
+      "frais",
+      "allocation",
+      "voyage",
+      "assurance"
+    ],
+    "full_funding": true,
+    "deadline_month_day": "02-28",
+    "apply_via": "direct",
+    "requirements": [
+      "cv",
+      "lettre",
+      "projet_recherche",
+      "recommandation",
+      "releves"
+    ],
+    "statement_type": "projet_recherche",
+    "kind": "bourse",
+    "recurring": true,
+    "status": "a_verifier"
+  },
+  {
+    "title": "Bourses doctorales TWAS-CNPq (Brésil)",
+    "organization": "TWAS / CNPq",
+    "official_url": "https://twas.org/opportunity/twas-cnpq-postgraduate-fellowship-programme",
+    "summary": "Doctorat au Brésil en sciences naturelles pour des étudiants de pays en développement, avec allocation mensuelle et billet d'avion.",
+    "levels": [
+      "BAC7"
+    ],
+    "study_countries": [
+      "BR"
+    ],
+    "eligible_nationalities": [
+      "DEVELOPING"
+    ],
+    "domains": [
+      "biologie",
+      "chimie",
+      "physique",
+      "mathematiques",
+      "agriculture",
+      "medecine"
+    ],
+    "languages": [
+      "en",
+      "pt"
+    ],
+    "coverage": [
+      "allocation",
+      "voyage"
+    ],
+    "full_funding": true,
+    "max_age": 35,
+    "deadline_month_day": "05-31",
+    "apply_via": "direct",
+    "requirements": [
+      "cv",
+      "projet_recherche",
+      "recommandation",
+      "lettre_admission"
+    ],
+    "statement_type": "projet_recherche",
+    "kind": "bourse",
+    "recurring": true,
+    "status": "a_verifier"
+  },
+  {
+    "title": "Bourses Mwalimu Nyerere de l'Union africaine",
+    "organization": "Commission de l'Union africaine",
+    "official_url": "https://au.int/en/scholarships",
+    "summary": "Master ou doctorat dans une université africaine, en sciences, technologie et innovation, pour des étudiants africains qui s'engagent à travailler en Afrique.",
+    "levels": [
+      "BAC5",
+      "BAC7"
+    ],
+    "study_countries": [
+      "KE",
+      "GH",
+      "NG",
+      "SN",
+      "ZA",
+      "RW",
+      "ET",
+      "UG",
+      "TZ",
+      "CM",
+      "CI",
+      "BJ",
+      "BF",
+      "MA",
+      "EG"
+    ],
+    "eligible_nationalities": [
+      "AFRICA"
+    ],
+    "domains": [
+      "ingenierie",
+      "informatique",
+      "agriculture",
+      "energie",
+      "medecine",
+      "mathematiques"
+    ],
+    "languages": [
+      "en",
+      "fr"
+    ],
+    "coverage": [
+      "frais",
+      "allocation"
+    ],
+    "full_funding": true,
+    "deadline_month_day": "04-30",
+    "apply_via": "direct",
+    "requirements": [
+      "cv",
+      "lettre",
+      "releves",
+      "recommandation"
+    ],
+    "kind": "bourse",
     "recurring": true,
     "status": "a_verifier"
   }

@@ -14,7 +14,7 @@ from tests.conftest import login, register, session_headers
 @pytest.fixture()
 def outbox(monkeypatch):
     sent = []
-    monkeypatch.setattr("app.routers.auth.send_mail", lambda to, subject, body: sent.append((to, subject, body)))
+    monkeypatch.setattr("app.routers.auth.send_mail", lambda to, subject, body, html=None, headers=None: sent.append((to, subject, body)))
     return sent
 
 
@@ -75,8 +75,11 @@ def test_email_verification_and_admin_only_after_proof(client, outbox):
 
 
 def test_resend_verification(client, outbox):
+    from app import ratelimit
+
     h = register(client, "renvoi@example.org", verify=False)
     outbox.clear()
+    ratelimit.reset("resend-1min:")  # un e-mail vient de partir à l'inscription : délai d'une minute
     assert client.post("/api/auth/renvoyer-verification", headers=h).status_code == 204
     assert len(outbox) == 1
 

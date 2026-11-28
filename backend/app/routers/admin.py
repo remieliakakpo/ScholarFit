@@ -35,6 +35,8 @@ def update(sid: int, body: ScholarshipIn, _: User = Depends(admin_user), db: Ses
         raise HTTPException(404, "Bourse introuvable")
     for k, v in body.model_dump().items():
         setattr(s, k, v)
+    s.edited_by_admin = True  # la fiche de départ ne l'écrasera plus
+    s.review = "publie"
     s.slug = slugify(s.title) if not db.scalars(select(Scholarship).where(Scholarship.slug == slugify(s.title), Scholarship.id != sid)).first() else s.slug
     s.verified_at = datetime.now(timezone.utc)
     db.commit()
@@ -48,6 +50,8 @@ def verify(sid: int, _: User = Depends(admin_user), db: Session = Depends(get_db
         raise HTTPException(404, "Bourse introuvable")
     s.status = "active"
     s.deadline_estimated = False  # la date a été confirmée sur le site officiel
+    s.edited_by_admin = True
+    s.review = "publie"
     s.verified_at = datetime.now(timezone.utc)
     db.commit()
     return scholarship_out(s)
@@ -189,3 +193,55 @@ def set_opportunity_types(body: KindsIn, request: Request, _: User = Depends(adm
         raise HTTPException(422, "Gardez au moins un type affiché") from e
     request.state.audit_details = {"avant": before, "apres": after}  # journal d'audit
     return {"kinds_enabled": after}
+
+
+# ---------- Relecture des fiches collectées automatiquement ----------
+@router.get("/relecture", response_model=list[ScholarshipOut])
+def review_queue(_: User = Depends(admin_user), db: Session = Depends(get_db)):
+    """Fiches trouvées par la collecte (sites d'annonces, IA) qui attendent une relecture avant publication."""
+    stmt = select(Scholarship).where(Scholarship.review == "a_relire").order_by(Scholarship.collected_at.desc()).limit(200)
+    return [scholarship_out(s) for s in db.scalars(stmt)]
+
+
+class ReviewIn(BaseModel):
+    decision: str  # publie | rejete
+
+
+@router.post("/relecture/{sid}", response_model=ScholarshipOut)
+def review_decide(sid: int, body: ReviewIn, _: User = Depends(admin_user), db: Session = Depends(get_db)):
+    s = db.get(Scholarship, sid)
+    if not s:
+        raise HTTPException(404, "Fiche introuvable")
+    if body.decision not in ("publie", "rejete"):
+        raise HTTPException(422, "Décision : publie ou rejete")
+    s.review = body.decision
+    if body.decision == "publie":
+        s.verified_at = datetime.now(timezone.utc)
+    db.commit()
+    return scholarship_out(s)
+
+
+@router.get("/sauvegarde")
+def download_backup(request: Request, admin: User = Depends(admin_user)):
+    """Télécharge une sauvegarde complète de la base (.json.gz), à garder hors de Railway.
+    Elle contient des données personnelles : chaque téléchargement est inscrit au journal d'audit."""
+    from .. import audit
+    import tempfile
+    from pathlib import Path
+
+    from fastapi.responses import Response
+
+    from ..db import SessionLocal
+    from ..launch import backup
+
+    db = SessionLocal()
+    try:
+        audit.record(db, admin, "sauvegarde de la base téléchargée", target_type="base", request=request)
+        db.commit()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = backup(db, directory=tmp, keep=0)
+            data = Path(path).read_bytes()
+            name = Path(path).name
+    finally:
+        db.close()
+    return Response(data, media_type="application/gzip", headers={"Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "no-store"})

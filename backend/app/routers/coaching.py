@@ -1,7 +1,8 @@
 """Accompagnement des candidatures : côté candidat, côté conseiller et côté administration."""
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -11,10 +12,10 @@ from ..config import get_settings
 from ..db import get_db
 from ..i18n import t
 from ..matching import profile_completeness
-from ..models import Advisor, Coaching, CoachingMeeting, CoachingMessage, CoachingStep, User
+from ..models import Advisor, Coaching, CoachingFile, CoachingMeeting, CoachingMessage, CoachingStep, User
 from ..schemas import (
     AdminCoachingOut, AdvisorAdminOut, AdvisorIn, AdvisorPublic, AdvisorUpdate, AssignIn, CloseIn,
-    CoachingDetailOut, CoachingOut, CoachingRequestIn, FeedbackIn, MeetingIn, MeetingOut, MeetingUpdate,
+    CoachingDetailOut, CoachingFileOut, CoachingOut, CoachingRequestIn, FeedbackIn, MeetingIn, MeetingOut, MeetingUpdate,
     MessageIn, MessageOut, PaymentIn, StepIn, StepOut, StepUpdate, StudentSummary,
 )
 from ..security import admin_user, current_user, verified_user
@@ -40,18 +41,18 @@ def _get(cid: int, user: User, db: Session) -> tuple[Coaching, str]:
     c = db.get(Coaching, cid)
     role = _role(c, user) if c else None
     if not c or not role:
-        raise HTTPException(404, "Accompagnement introuvable")
+        raise HTTPException(404, t("Accompagnement introuvable", "Coaching not found"))
     return c, role
 
 
 def _require(role: str, allowed: tuple[str, ...], what: str) -> None:
     if role not in allowed:
-        raise HTTPException(403, f"Seul {what} peut faire cela")
+        raise HTTPException(403, t(f"Seul {what} peut faire cela", "You are not allowed to do this"))
 
 
 def _require_open(c: Coaching) -> None:
     if c.status not in svc.ACTIVE:
-        raise HTTPException(409, "Cet accompagnement est clos")
+        raise HTTPException(409, t("Cet accompagnement est clos", "This coaching is closed"))
 
 
 def _unread(c: Coaching, role: str) -> int:
@@ -131,18 +132,18 @@ def my_coachings(user: User = Depends(current_user), db: Session = Depends(get_d
 def request_coaching(body: CoachingRequestIn, user: User = Depends(verified_user), db: Session = Depends(get_db)):
     """Demande d'accompagnement. Un seul accompagnement ouvert à la fois."""
     if not body.share_consent:
-        raise HTTPException(422, "Votre accord est nécessaire : le conseiller doit voir votre profil, votre CV et vos candidatures pour vous aider.")
+        raise HTTPException(422, t("Votre accord est nécessaire : le conseiller doit voir votre profil, votre CV et vos candidatures pour vous aider.", "Your consent is needed: the adviser must see your profile, CV and applications to help you."))
     if db.scalars(select(Coaching).where(Coaching.student_id == user.id, Coaching.status.in_(svc.ACTIVE))).first():
-        raise HTTPException(409, "Vous avez déjà un accompagnement en cours")
+        raise HTTPException(409, t("Vous avez déjà un accompagnement en cours", "You already have coaching in progress"))
     unknown = [n for n in body.needs if n not in svc.NEEDS]
     if unknown:
-        raise HTTPException(422, f"Besoins inconnus : {unknown}")
+        raise HTTPException(422, t(f"Besoins inconnus : {unknown}", f"Unknown needs: {unknown}"))
     mine = {a.id for a in user.applications}
     if set(body.application_ids) - mine:
-        raise HTTPException(422, "Certaines candidatures ne sont pas dans votre suivi")
+        raise HTTPException(422, t("Certaines candidatures ne sont pas dans votre suivi", "Some applications are not in your tracker"))
     offer = offers.paid_offer(body.offer)
     if offer is None:
-        raise HTTPException(422, "Offre inconnue : choisissez standard ou premium (ou postulez seul, sans accompagnement)")
+        raise HTTPException(422, t("Offre inconnue : choisissez standard ou premium (ou postulez seul, sans accompagnement)", "Unknown offer: choose standard or premium (or apply on your own, without coaching)"))
     if offer["max_scholarships"] and len(body.application_ids) > offer["max_scholarships"]:
         n = offer["max_scholarships"]
         raise HTTPException(422, t(f"L'offre {offer['name']} couvre {n} bourse{'s' if n > 1 else ''}. Choisissez l'offre Premium ou retirez des candidatures.",
@@ -167,8 +168,8 @@ def request_coaching(body: CoachingRequestIn, user: User = Depends(verified_user
 @router.get("/conseiller", response_model=list[CoachingOut])
 def advisor_coachings(user: User = Depends(current_user), db: Session = Depends(get_db)):
     """Espace conseiller : les candidats suivis, les plus récents d'abord."""
-    if not user.is_advisor:
-        raise HTTPException(403, "Réservé aux conseillers")
+    if not user.is_advisor:  # un conseiller désactivé perd l'accès
+        raise HTTPException(403, t("Réservé aux conseillers", "Advisers only"))
     cs = db.scalars(select(Coaching).where(Coaching.advisor_id == user.advisor.id).order_by(Coaching.updated_at.desc()))
     return [_out(c, "conseiller") for c in cs]
 
@@ -206,7 +207,103 @@ def detail(cid: int, user: User = Depends(current_user), db: Session = Depends(g
         c, role, CoachingDetailOut,
         steps=[StepOut.model_validate(s) for s in c.steps], messages=messages,
         meetings=[MeetingOut.model_validate(m) for m in c.meetings], student=student, applications=apps,
+        files=[_file_out(f, user) for f in _files(db, c)],
     )
+
+
+# ---------- Documents échangés ----------
+FILE_TYPES = {
+    "application/pdf": ".pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+    "application/msword": ".doc",
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+}
+FILE_MAX = 8 * 1024 * 1024
+FILE_CATEGORIES = ("livrable", "piece", "preuve_depot")
+
+
+def _files(db: Session, c: Coaching) -> list[CoachingFile]:
+    return list(db.scalars(select(CoachingFile).where(CoachingFile.coaching_id == c.id).order_by(CoachingFile.created_at.desc())))
+
+
+def _file_out(f: CoachingFile, user: User) -> CoachingFileOut:
+    return CoachingFileOut(id=f.id, author_role=f.author_role, category=f.category, filename=f.filename,
+                           content_type=f.content_type, size=f.size, note=f.note, created_at=f.created_at,
+                           mine=f.author_id == user.id)
+
+
+# Premiers octets de chaque format accepté (le .docx est une archive zip, le .doc un fichier OLE)
+SIGNATURES = {
+    "application/pdf": (b"%PDF",),
+    "image/jpeg": (b"\xff\xd8\xff",),
+    "image/png": (b"\x89PNG\r\n\x1a\n",),
+    "application/msword": (b"\xd0\xcf\x11\xe0",),
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": (b"PK\x03\x04",),
+}
+
+
+def _content_matches(ctype: str, data: bytes) -> bool:
+    sigs = SIGNATURES.get(ctype)
+    return sigs is None or data.startswith(sigs)
+
+
+@router.post("/{cid}/fichiers", response_model=CoachingFileOut, status_code=201)
+async def upload_file(cid: int, file: UploadFile = File(...), category: str = Form("piece"), note: str = Form(""),
+                      user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Le candidat envoie une pièce ; l'expert livre un document ou la preuve de dépôt (PDF, Word, image, 8 Mo au plus)."""
+    c, role = _get(cid, user, db)
+    _require_open(c)
+    if category not in FILE_CATEGORIES:
+        raise HTTPException(422, t("Type de document inconnu", "Unknown document type"))
+    if category in ("livrable", "preuve_depot") and role == "candidat":
+        raise HTTPException(403, t("Seul l'expert livre les documents finaux.", "Only the expert can deliver final documents."))
+    ctype = (file.content_type or "").split(";")[0].strip().lower()
+    if ctype not in FILE_TYPES:
+        raise HTTPException(415, t("Formats acceptés : PDF, Word, JPG ou PNG.", "Accepted formats: PDF, Word, JPG or PNG."))
+    data = await file.read(FILE_MAX + 1)
+    if len(data) > FILE_MAX:
+        raise HTTPException(413, t("Le fichier dépasse 8 Mo.", "The file is larger than 8 MB."))
+    if not data:
+        raise HTTPException(422, t("Le fichier est vide.", "The file is empty."))
+    if not _content_matches(ctype, data):  # le type annoncé par le navigateur doit correspondre au contenu
+        raise HTTPException(415, t("Formats acceptés : PDF, Word, JPG ou PNG.", "Accepted formats: PDF, Word, JPG or PNG."))
+    name = "".join(ch for ch in (file.filename or "document") if ch.isalnum() or ch in " ._-()").strip()[:150] or "document"
+    if not name.lower().endswith(FILE_TYPES[ctype]) and not (ctype == "image/jpeg" and name.lower().endswith(".jpeg")):
+        name += FILE_TYPES[ctype]
+    f = CoachingFile(coaching_id=c.id, author_id=user.id, author_role=role, category=category, filename=name,
+                     content_type=ctype, size=len(data), data=data, note=note.strip()[:300] or None)
+    db.add(f)
+    db.flush()
+    other = _other_party(c, role)
+    if other is not None:
+        label = {"livrable": "Nouveau document livré par votre expert", "preuve_depot": "Votre candidature a été déposée : la preuve de dépôt est disponible",
+                 "piece": f"{_student_name(c)} a envoyé une pièce"}[category]
+        svc.notify(db, other, f"acc-fichier-{f.id}", f"{label} : {name}.")
+    db.commit()
+    return _file_out(f, user)
+
+
+@router.get("/{cid}/fichiers/{fid}")
+def download_file(cid: int, fid: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    c, _role = _get(cid, user, db)
+    f = db.get(CoachingFile, fid)
+    if f is None or f.coaching_id != c.id:
+        raise HTTPException(404, t("Document introuvable", "Document not found"))
+    safe = f.filename.replace('"', "")
+    return Response(f.data, media_type=f.content_type, headers={"Content-Disposition": f'attachment; filename="{safe}"'})
+
+
+@router.delete("/{cid}/fichiers/{fid}", status_code=204)
+def delete_file(cid: int, fid: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    c, role = _get(cid, user, db)
+    f = db.get(CoachingFile, fid)
+    if f is None or f.coaching_id != c.id:
+        raise HTTPException(404, t("Document introuvable", "Document not found"))
+    if f.author_id != user.id and role != "admin":
+        raise HTTPException(403, t("Vous ne pouvez supprimer que vos propres documents.", "You can only delete your own documents."))
+    db.delete(f)
+    db.commit()
 
 
 @router.post("/{cid}/annuler", response_model=CoachingOut)
@@ -227,7 +324,7 @@ def finish(cid: int, body: CloseIn, user: User = Depends(current_user), db: Sess
     c, role = _get(cid, user, db)
     _require(role, ("conseiller", "admin"), "le conseiller")
     if c.status != "en_cours":
-        raise HTTPException(409, "Seul un accompagnement en cours peut être terminé")
+        raise HTTPException(409, t("Seul un accompagnement en cours peut être terminé", "Only coaching in progress can be completed"))
     if body.note and body.note.strip():
         db.add(CoachingMessage(coaching_id=c.id, author_id=user.id, author_role=role, content=body.note.strip(), read_by_advisor=True))
     c.status = "termine"
@@ -243,7 +340,7 @@ def give_feedback(cid: int, body: FeedbackIn, user: User = Depends(current_user)
     c, role = _get(cid, user, db)
     _require(role, ("candidat",), "le candidat")
     if c.status != "termine":
-        raise HTTPException(409, "L'avis se donne à la fin de l'accompagnement")
+        raise HTTPException(409, t("L'avis se donne à la fin de l'accompagnement", "Feedback is given at the end of the coaching"))
     c.rating, c.feedback = body.rating, body.feedback
     db.commit()
     return _out(c, role)
@@ -253,7 +350,7 @@ def give_feedback(cid: int, body: FeedbackIn, user: User = Depends(current_user)
 def _step(sid: int, user: User, db: Session) -> tuple[CoachingStep, str]:
     s = db.get(CoachingStep, sid)
     if not s:
-        raise HTTPException(404, "Étape introuvable")
+        raise HTTPException(404, t("Étape introuvable", "Step not found"))
     _c, role = _get(s.coaching_id, user, db)
     return s, role
 
@@ -263,7 +360,7 @@ def add_step(cid: int, body: StepIn, user: User = Depends(current_user), db: Ses
     c, role = _get(cid, user, db)
     _require_open(c)
     if body.application_id is not None and body.application_id not in {a.id for a in c.student.applications}:
-        raise HTTPException(422, "Candidature inconnue")
+        raise HTTPException(422, t("Candidature inconnue", "Unknown application"))
     s = CoachingStep(coaching_id=c.id, position=max((x.position for x in c.steps), default=-1) + 1, **body.model_dump())
     db.add(s)
     if role != "candidat":
@@ -278,7 +375,7 @@ def update_step(sid: int, body: StepUpdate, user: User = Depends(current_user), 
     _require_open(s.coaching)
     data = body.model_dump(exclude_unset=True)
     if role == "candidat" and set(data) - {"done"}:
-        raise HTTPException(403, "Vous pouvez cocher une étape ; votre conseiller la modifie")
+        raise HTTPException(403, t("Vous pouvez cocher une étape ; votre conseiller la modifie", "You can tick a step; your adviser edits it"))
     if "done" in data:
         s.done_at = datetime.now(timezone.utc) if data["done"] else None
     for k, v in data.items():
@@ -301,7 +398,7 @@ def post_message(cid: int, body: MessageIn, user: User = Depends(current_user), 
     c, role = _get(cid, user, db)
     _require_open(c)
     if body.application_id is not None and body.application_id not in {a.id for a in c.student.applications}:
-        raise HTTPException(422, "Candidature inconnue")
+        raise HTTPException(422, t("Candidature inconnue", "Unknown application"))
     m = CoachingMessage(coaching_id=c.id, author_id=user.id, author_role=role, content=body.content.strip(),
                         application_id=body.application_id,
                         read_by_student=role == "candidat", read_by_advisor=role != "candidat")
@@ -322,12 +419,12 @@ def post_message(cid: int, body: MessageIn, user: User = Depends(current_user), 
 def propose_meeting(cid: int, body: MeetingIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
     c, role = _get(cid, user, db)
     if c.status != "en_cours":
-        raise HTTPException(409, "Les rendez-vous se prennent une fois le conseiller attribué")
+        raise HTTPException(409, t("Les rendez-vous se prennent une fois le conseiller attribué", "Meetings can be booked once an adviser is assigned"))
     if body.mode not in svc.MEETING_MODES:
-        raise HTTPException(422, f"Mode inconnu. Valeurs : {list(svc.MEETING_MODES)}")
+        raise HTTPException(422, t(f"Mode inconnu. Valeurs : {list(svc.MEETING_MODES)}", f"Unknown mode. Values: {list(svc.MEETING_MODES)}"))
     start = body.starts_at if body.starts_at.tzinfo else body.starts_at.replace(tzinfo=timezone.utc)
     if start < datetime.now(timezone.utc):
-        raise HTTPException(422, "Choisissez une date à venir")
+        raise HTTPException(422, t("Choisissez une date à venir", "Choose a future date"))
     m = CoachingMeeting(coaching_id=c.id, proposed_by="candidat" if role == "candidat" else "conseiller", **body.model_dump())
     db.add(m)
     db.flush()
@@ -342,23 +439,23 @@ def propose_meeting(cid: int, body: MeetingIn, user: User = Depends(current_user
 def update_meeting(mid: int, body: MeetingUpdate, user: User = Depends(current_user), db: Session = Depends(get_db)):
     m = db.get(CoachingMeeting, mid)
     if not m:
-        raise HTTPException(404, "Rendez-vous introuvable")
+        raise HTTPException(404, t("Rendez-vous introuvable", "Meeting not found"))
     c, role = _get(m.coaching_id, user, db)
     me = "candidat" if role == "candidat" else "conseiller"
     data = body.model_dump(exclude_unset=True)
     status = data.pop("status", None)
     if status is not None:
         if status not in svc.MEETING_STATUSES:
-            raise HTTPException(422, f"Statut inconnu. Valeurs : {list(svc.MEETING_STATUSES)}")
+            raise HTTPException(422, t(f"Statut inconnu. Valeurs : {list(svc.MEETING_STATUSES)}", f"Unknown status. Values: {list(svc.MEETING_STATUSES)}"))
         if status == "confirme" and m.proposed_by == me and role != "admin":
-            raise HTTPException(403, "C'est à l'autre personne de confirmer ce rendez-vous")
+            raise HTTPException(403, t("C'est à l'autre personne de confirmer ce rendez-vous", "The other person must confirm this meeting"))
         if status == "fait" and me != "conseiller":
-            raise HTTPException(403, "Seul le conseiller marque un rendez-vous comme fait")
+            raise HTTPException(403, t("Seul le conseiller marque un rendez-vous comme fait", "Only the adviser can mark a meeting as done"))
         m.status = status
     if "starts_at" in data:  # nouvelle date : l'autre doit reconfirmer
         m.starts_at, m.status, m.proposed_by = data.pop("starts_at"), "propose", me
     if "summary" in data and me != "conseiller":
-        raise HTTPException(403, "Le compte rendu est écrit par le conseiller")
+        raise HTTPException(403, t("Le compte rendu est écrit par le conseiller", "The meeting notes are written by the adviser"))
     for k, v in data.items():
         setattr(m, k, v)
     other = _other_party(c, role)
@@ -386,13 +483,13 @@ def admin_list(status: str | None = None, _: User = Depends(admin_user), db: Ses
 def admin_assign(cid: int, body: AssignIn, _: User = Depends(admin_user), db: Session = Depends(get_db)):
     c = db.get(Coaching, cid)
     if not c:
-        raise HTTPException(404, "Accompagnement introuvable")
+        raise HTTPException(404, t("Accompagnement introuvable", "Coaching not found"))
     _require_open(c)
     a = db.get(Advisor, body.advisor_id)
     if not a or not a.active:
-        raise HTTPException(404, "Conseiller introuvable ou inactif")
+        raise HTTPException(404, t("Conseiller introuvable ou inactif", "Adviser not found or inactive"))
     if a.user_id == c.student_id:
-        raise HTTPException(422, "Un conseiller ne peut pas s'accompagner lui-même")
+        raise HTTPException(422, t("Un conseiller ne peut pas s'accompagner lui-même", "An adviser cannot coach themselves"))
     svc.assign(db, c, a)
     db.commit()
     return _out(c, "admin")
@@ -408,9 +505,9 @@ def add_advisor(body: AdvisorIn, _: User = Depends(admin_user), db: Session = De
     """Donne le rôle de conseiller à un compte existant (la personne crée d'abord son compte)."""
     u = db.scalars(select(User).where(User.email == body.email.lower())).first()
     if not u:
-        raise HTTPException(404, "Aucun compte avec cet e-mail : la personne doit d'abord s'inscrire")
+        raise HTTPException(404, t("Aucun compte avec cet e-mail : la personne doit d'abord s'inscrire", "No account with this email: the person must sign up first"))
     if u.advisor is not None:
-        raise HTTPException(409, "Ce compte est déjà conseiller")
+        raise HTTPException(409, t("Ce compte est déjà conseiller", "This account is already an adviser"))
     data = body.model_dump(exclude={"email"})
     a = Advisor(user_id=u.id, **data)
     db.add(a)
@@ -423,7 +520,7 @@ def add_advisor(body: AdvisorIn, _: User = Depends(admin_user), db: Session = De
 def update_advisor(aid: int, body: AdvisorUpdate, _: User = Depends(admin_user), db: Session = Depends(get_db)):
     a = db.get(Advisor, aid)
     if not a:
-        raise HTTPException(404, "Conseiller introuvable")
+        raise HTTPException(404, t("Conseiller introuvable", "Adviser not found"))
     for k, v in body.model_dump(exclude_unset=True).items():
         setattr(a, k, v)
     db.commit()
@@ -436,10 +533,10 @@ def admin_payment(cid: int, body: PaymentIn, request: Request, _: User = Depends
     """Le paiement (Mobile Money, Wave, Orange Money, virement…) se fait hors plateforme dans le MVP :
     l'administrateur indique ici qu'il est reçu."""
     if body.payment_status not in PAYMENT_STATUSES:
-        raise HTTPException(422, "Statut de paiement inconnu")
+        raise HTTPException(422, t("Statut de paiement inconnu", "Unknown payment status"))
     c = db.get(Coaching, cid)
     if not c:
-        raise HTTPException(404, "Accompagnement introuvable")
+        raise HTTPException(404, t("Accompagnement introuvable", "Coaching not found"))
     request.state.audit_details = {"avant": c.payment_status, "apres": body.payment_status, "prix": c.price,
                                    "candidat": c.student.email}
     c.payment_status = body.payment_status

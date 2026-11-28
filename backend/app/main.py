@@ -9,7 +9,7 @@ from .config import get_settings
 from .db import init_db
 from .i18n import LangMiddleware
 from . import scheduler
-from .routers import admin, ai, applications, auth, chat, coaching, community, monitoring, profile, questionnaire, scholarships
+from .routers import admin, ai, applications, auth, chat, coaching, community, monitoring, payments, profile, questionnaire, scholarships, seo
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 settings = get_settings()
@@ -42,10 +42,28 @@ def _load_translations() -> None:
         db.close()
 
 
+def _demo_accounts() -> None:
+    """Identifiants du README toujours valables, même si « app.cli seed » n'a pas été lancé."""
+    from .db import SessionLocal
+    from .demo import ensure_demo_accounts
+
+    db = SessionLocal()
+    try:
+        ensure_demo_accounts(db)
+    except Exception:  # noqa: BLE001 - l'API démarre quand même
+        logging.getLogger(__name__).exception("Comptes de démo non créés")
+    finally:
+        db.close()
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     init_db()
     _load_translations()
+    _demo_accounts()
+    from .launch import warn_at_startup
+
+    warn_at_startup()
     scheduler.start()
     yield
     scheduler.stop()
@@ -63,7 +81,11 @@ app = FastAPI(
 )
 
 UNSAFE = {"POST", "PUT", "PATCH", "DELETE"}
-UPLOAD_LIMIT = 6 * 1024 * 1024  # CV : 5 Mo + enveloppe multipart
+UPLOAD_LIMIT = 6 * 1024 * 1024  # CV et preuve de paiement : 5 Mo + enveloppe multipart
+COACHING_FILE_LIMIT = 9 * 1024 * 1024  # documents de l'accompagnement : 8 Mo + enveloppe
+# Appels de CinetPay (serveur à serveur et retour du navigateur) : ils ne portent pas l'en-tête. La
+# notification est vérifiée par sa signature x-token, et le statut est toujours redemandé à CinetPay.
+CSRF_EXEMPT = {"/api/payments/cinetpay/notify", "/api/payments/cinetpay/return"}
 
 
 @app.middleware("http")
@@ -73,10 +95,17 @@ async def security_middleware(request: Request, call_next):
     CSRF : toute requête qui modifie quelque chose doit porter l'en-tête X-Requested-With (le site
     l'ajoute à chaque appel). Un autre site ne peut pas l'ajouter sans l'accord de CORS, et un
     formulaire HTML ne peut pas l'envoyer. Le cookie SameSite=Lax est une seconde barrière."""
-    if request.method in UNSAFE and request.url.path.startswith("/api/") and not request.headers.get("x-requested-with"):
+    if (request.method in UNSAFE and request.url.path.startswith("/api/") and not request.headers.get("x-requested-with")
+            and request.url.path not in CSRF_EXEMPT):
         return JSONResponse({"detail": "En-tête X-Requested-With manquant (protection CSRF)"}, status_code=403)
     if request.method in UNSAFE:
-        limit = UPLOAD_LIMIT if (request.url.path == "/api/profile/cv" or request.url.path.endswith("/preuve")) else int(settings.max_request_mb * 1024 * 1024)
+        path = request.url.path
+        if path.startswith("/api/accompagnement/") and path.rstrip("/").endswith("/fichiers"):
+            limit = COACHING_FILE_LIMIT
+        elif path == "/api/profile/cv" or path.endswith("/preuve"):
+            limit = UPLOAD_LIMIT
+        else:
+            limit = int(settings.max_request_mb * 1024 * 1024)
         try:
             size = int(request.headers.get("content-length") or 0)
         except ValueError:
@@ -119,11 +148,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-for r in (auth, scholarships, community, monitoring, profile, chat, applications, ai, admin, coaching, questionnaire):
+for r in (auth, scholarships, community, monitoring, profile, chat, applications, ai, admin, coaching, questionnaire, payments, seo):
     app.include_router(r.router)
 app.include_router(coaching.admin_router)
+app.include_router(payments.admin_router)
+
+
+API_VERSION = "2026-11-27b"
 
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "ia": "claude" if settings.ai_enabled else "hors-ligne (règles)", "modele": settings.claude_model if settings.ai_enabled else None}
+    # "version" permet de vérifier en ligne (https://…railway.app/api/health) que Railway tourne bien le dernier code.
+    return {"ok": True, "version": API_VERSION, "ia": "claude" if settings.ai_enabled else "hors-ligne (règles)", "modele": settings.claude_model if settings.ai_enabled else None}

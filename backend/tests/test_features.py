@@ -10,7 +10,7 @@ from tests.conftest import login, register
 @pytest.fixture()
 def outbox(monkeypatch):
     sent = []
-    monkeypatch.setattr("app.mailer.send_mail", lambda to, subject, body, headers=None: sent.append((to, subject, body, headers)) or True)
+    monkeypatch.setattr("app.mailer.send_mail", lambda to, subject, body, html=None, headers=None: sent.append((to, subject, body, headers)) or True)
     return sent
 
 
@@ -36,9 +36,10 @@ def test_alerts_grouped_in_one_email_with_unsubscribe(client, outbox):
     db = _db()
     try:
         u, v = _user(db, "alertes@example.org"), _user(db, "pasconfirme@example.org")
-        _add(db, u, "test-1", "rappel", "Plus que 7 jour(s) pour « Bourse A ».", None)
+        # les rappels et l'accompagnement partent tout de suite ; le résumé regroupe le reste
+        _add(db, u, "test-1", "recherche", "Nouvelle offre pour votre recherche : « Bourse A ».", None)
         _add(db, u, "test-2", "nouvelle_bourse", "Nouvelle bourse pour vous : « Bourse B ».", 1)
-        _add(db, v, "test-3", "rappel", "Plus que 1 jour(s) pour « Bourse C ».", None)
+        _add(db, v, "test-3", "recherche", "Nouvelle offre : « Bourse C ».", None)
         db.commit()
         assert send_alert_emails(db) >= 1  # d'autres comptes des tests peuvent avoir des alertes en attente
         mine = [m for m in outbox if m[0] == "alertes@example.org"]
@@ -82,8 +83,16 @@ def test_new_scholarship_alert_for_profile(client):
     from app.alerts import run_alerts
     from app.models import Alert
 
+    from datetime import datetime, timezone
+
+    from app.models import Scholarship
+
     db = _db()
     try:
+        # seules les bourses ajoutées après l'inscription donnent une alerte : on en « collecte » à nouveau
+        for s in db.query(Scholarship).filter(Scholarship.status != "expiree"):
+            s.collected_at = datetime.now(timezone.utc)
+        db.commit()
         run_alerts(db)
         demo = _user(db, "demo@example.org")
         kinds = {a.kind for a in db.query(Alert).filter_by(user_id=demo.id)}

@@ -1,6 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
 import AdminCoaching from "@/components/AdminCoaching";
+import AdminPayments from "@/components/AdminPayments";
+import AdminReview from "@/components/AdminReview";
 import AdminCredits from "@/components/docs/AdminCredits";
 import { AdminAICosts, AdminAudit, AdminReports } from "@/components/AdminMonitoring";
 import AdminKinds from "@/components/AdminKinds";
@@ -70,8 +72,10 @@ function Admin() {
       {log && <pre className="card overflow-x-auto whitespace-pre-wrap p-4 text-xs">{log}</pre>}
 
       <AdminKinds />
+      <AdminReview />
       <AdminReports />
       <AdminCoaching meta={meta} />
+      <AdminPayments />
       <AdminCredits />
       <AdminAICosts />
       <AdminAudit />

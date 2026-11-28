@@ -1,6 +1,8 @@
 """Configuration de l'application, lue depuis les variables d'environnement (ou un fichier .env)."""
 from functools import lru_cache
+from pathlib import Path
 
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -11,21 +13,47 @@ KNOWN_SECRETS = {
     "change-moi-avec-une-longue-chaine-aleatoire",
     "change-moi-en-production-avec-une-longue-chaine",
 }
+# Dossier backend/ : le fichier .env et la base SQLite y sont cherchés quel que soit le dossier
+# depuis lequel l'API est lancée (sinon une base vide était créée ailleurs, sans les comptes de démo).
+BACKEND_DIR = Path(__file__).resolve().parent.parent
+DEV_ENVS = {"dev", "development", "developpement", "test", "local"}
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(env_file=(".env", BACKEND_DIR / ".env"), env_file_encoding="utf-8", extra="ignore")
 
     app_name: str = "ScholarFit"
-    # « dev » sur un poste de développement (comptes de démo, documentation /docs, cookie sans Secure).
+    # « dev » (ou « local ») sur un poste de développement (comptes de démo, documentation /docs, cookie sans Secure).
     # Toute autre valeur est traitée comme la production : l'API refuse alors de démarrer avec un
     # secret faible ou connu, et aucun compte de démo n'est créé.
     app_env: str = "production"
-    # Adresse publique du site, pour les liens envoyés par e-mail (vérification, mot de passe oublié)
+    # Adresse publique du site, pour les liens envoyés par e-mail (vérification, mot de passe oublié).
+    # FRONTEND_URL ou SITE_URL : les deux noms sont acceptés.
     frontend_url: str = "http://localhost:3000"
+    site_url: str = ""
+    # Adresse publique de l'API (notifications de paiement CinetPay)
+    api_public_url: str = "http://localhost:8000"
     # SQLite par défaut pour démarrer sans rien installer. En production :
     # postgresql+psycopg://user:pass@localhost:5432/bourses
     database_url: str = "sqlite:///./bourses.db"
+
+    @field_validator("database_url")
+    @classmethod
+    def _sqlite_in_backend(cls, v: str) -> str:
+        """« sqlite:///./bourses.db » désigne toujours backend/bourses.db."""
+        prefix = "sqlite:///"
+        if v.startswith(prefix) and not v.startswith(prefix + "/") and ":memory:" not in v:
+            rel = v[len(prefix):]
+            if not Path(rel).is_absolute():
+                return prefix + (BACKEND_DIR / rel).resolve().as_posix()
+        return v
+
+    @model_validator(mode="after")
+    def _one_site_url(self):
+        if self.site_url and self.frontend_url == "http://localhost:3000":
+            self.frontend_url = self.site_url
+        self.site_url = self.frontend_url
+        return self
 
     # Secret de signature des sessions et des liens envoyés par e-mail. Obligatoire en production :
     # au moins 32 caractères aléatoires (python -c "import secrets; print(secrets.token_urlsafe(48))").
@@ -81,14 +109,34 @@ class Settings(BaseSettings):
     # Plafond de dépense par jour : au-delà, l'IA est coupée jusqu'au lendemain (0 = pas de plafond)
     ai_daily_budget_usd: float = 0.0
 
-    # E-mails (vérification d'adresse, mot de passe oublié). Sans SMTP_HOST, les e-mails sont
-    # écrits dans le journal de l'API (pratique en développement, à configurer en production).
+    # Paiement en ligne : simulation (essais ; en production, devient « manuel ») | cinetpay | manuel (désactivé)
+    payment_provider: str = "simulation"
+    cinetpay_apikey: str = ""
+    cinetpay_site_id: str = ""
+    cinetpay_secret_key: str = ""  # vérifie la signature x-token des notifications
+    cinetpay_api_url: str = "https://api-checkout.cinetpay.com/v2"
+
+    # E-mails : console (écrits dans le journal de l'API) | smtp | brevo | resend.
+    # Vide : smtp si SMTP_HOST est renseigné, sinon console.
+    email_backend: str = ""
+    email_reply_to: str = ""
+    brevo_api_key: str = ""
+    resend_api_key: str = ""
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_user: str = ""
     smtp_password: str = ""
     smtp_from: str = "ScholarFit <no-reply@example.org>"
     smtp_starttls: bool = True
+    smtp_ssl: bool = False  # true pour le port 465 ; sinon STARTTLS sur le port 587
+    # Durée de validité des liens envoyés par e-mail
+    verify_link_hours: int = 48
+    reset_link_minutes: int = 60
+
+    # Comptes de démonstration (admin, étudiante, conseiller) : seulement en développement
+    demo_accounts: bool = True
+    # Limite de requêtes par adresse IP (connexion, inscription, assistant…)
+    rate_limit_enabled: bool = True
 
     # Origines autorisées à appeler l'API (le site Next.js en local)
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
@@ -144,7 +192,23 @@ class Settings(BaseSettings):
 
     @property
     def is_dev(self) -> bool:
-        return self.app_env.strip().lower() in {"dev", "development", "developpement", "test"}
+        return self.app_env.strip().lower() in DEV_ENVS
+
+    @property
+    def is_production(self) -> bool:
+        return not self.is_dev
+
+    @property
+    def demo_enabled(self) -> bool:
+        """Comptes de démonstration : jamais en production, quoi que dise DEMO_ACCOUNTS."""
+        return self.demo_accounts and self.is_dev
+
+    @property
+    def mail_backend(self) -> str:
+        b = (self.email_backend or "").strip().lower()
+        if b in ("console", "smtp", "brevo", "resend"):
+            return b
+        return "smtp" if self.smtp_host else "console"
 
     @property
     def trusted_proxy_list(self) -> list[str]:

@@ -156,6 +156,12 @@ def test_ai_discovery_keeps_only_live_links(client, monkeypatch):
         assert created == 1
     finally:
         db.close()
+    # trouvée par l'IA : en attente de relecture, invisible du public tant qu'un administrateur ne l'a pas publiée
+    assert client.get("/api/scholarships", params={"q": "Océanie"}).json()["total"] == 0
+    adm = login(client, "admin@example.org", "admin12345")
+    queue = [x for x in client.get("/api/admin/relecture", headers=adm).json() if "Océanie" in x["title"]]
+    assert len(queue) == 1 and queue[0]["review"] == "a_relire"
+    assert client.post(f"/api/admin/relecture/{queue[0]['id']}", headers=adm, json={"decision": "publie"}).status_code == 200
     r = client.get("/api/scholarships", params={"q": "Océanie"}).json()
     assert r["total"] == 1 and r["items"][0]["status"] == "a_verifier" and r["items"][0]["link_status"] == "ok"
     assert client.get("/api/scholarships", params={"q": "lien mort"}).json()["total"] == 0
@@ -277,6 +283,9 @@ def test_aggregator_site_connector(client, monkeypatch):
         assert collector.run_source(db, "Afri-Carrières").startswith("ok : 2 nouvelle")
     finally:
         db.close()
+    adm = login(client, "admin@example.org", "admin12345")
+    for x in client.get("/api/admin/relecture", headers=adm).json():
+        client.post(f"/api/admin/relecture/{x['id']}", headers=adm, json={"decision": "publie"})
     b = client.get("/api/scholarships", params={"q": "master en Suède pour Africains"}).json()["items"][0]
     assert b["kind"] == "bourse" and b["official_url"] == "https://si.se/apply" and b["source_page"].startswith("https://afri-carrieres.com/")
     s = client.get("/api/scholarships", params={"kind": "stage", "q": "Banque mondiale 2027"}).json()["items"][0]
@@ -293,3 +302,16 @@ def test_country_exact_matches_stats(client):
     loose = client.get("/api/scholarships", params={"country": "GH", "kind": "bourse"}).json()["total"]
     exact = client.get("/api/scholarships", params={"country": "GH", "kind": "bourse", "country_exact": True}).json()["total"]
     assert loose >= exact
+
+
+def test_experience_estimate_and_requirement():
+    from datetime import date
+    from app.matching import Criteria, estimate_experience_years, score
+    from app.models import Scholarship
+    cv = "EXPÉRIENCES\nOct 2024 - Aujourd'hui Développeur, Togo Data Lab\nJuin 2023 - Sept 2023 Assistant, Mairie\nFORMATION\n2019 - 2022 Licence"
+    years = estimate_experience_years(cv, date(2026, 11, 27))
+    assert years is not None and 2.0 <= years <= 2.5
+    s = Scholarship(title="X", summary="", levels=["BAC5"], study_countries=["GB"], domains=["tous"], languages=["en"], min_experience_years=3,
+                    recurring=True, eligibility=[], target_groups=[], language_tests={}, requirements=[])
+    m = score(s, Criteria(target_level="BAC5", experience_years=years), date(2026, 11, 27))
+    assert m.chance != "bonne" and any("expérience professionnelle" in g for g in m.gaps)

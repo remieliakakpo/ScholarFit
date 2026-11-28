@@ -7,7 +7,7 @@ import Icon from "@/components/Icon";
 import { ScoreRing } from "@/components/ScholarshipCard";
 import PaperCV from "@/components/docs/PaperCV";
 import { CreditsBar, PayModal } from "@/components/docs/Credits";
-import { Application, Profile, Scholarship, api } from "@/lib/api";
+import { Application, Profile, Scholarship, api, normalizeProfile } from "@/lib/api";
 import { CVData, Credits, Diagnostic, Doc, DocError, docApi, downloadDoc } from "@/lib/docs";
 import { useT } from "@/components/LangProvider";
 
@@ -56,7 +56,7 @@ function CVTool() {
   const bourseId = bourse?.id ?? null;
 
   useEffect(() => {
-    api<Profile>("/api/profile").then(setProfile).catch(() => null);
+    api<unknown>("/api/profile").then((r) => setProfile(normalizeProfile(r))).catch(() => null);
     api<Application[]>("/api/applications").then(setApps).catch(() => null);
   }, []);
 
@@ -92,7 +92,7 @@ function CVTool() {
     try {
       const fd = new FormData();
       fd.append("file", file);
-      setProfile(await api<Profile>("/api/profile/cv", { method: "POST", body: fd }));
+      setProfile(normalizeProfile(await api<unknown>("/api/profile/cv", { method: "POST", body: fd })));
       setPasteMode(false);
     } catch (e) {
       setError((e as Error).message);

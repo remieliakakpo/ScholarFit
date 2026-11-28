@@ -239,8 +239,8 @@ def application_steps(s: Scholarship) -> list[str]:
     url = s.apply_url or s.official_url
     if (s.kind or "bourse") == "stage":
         return [
-            t(f"Consultez l'offre de stage sur la page officielle ({url}) et vérifiez le niveau d'études, la durée et les dates demandés.",
-              f"Read the internship offer on the official page ({url}) and check the required level of study, duration and dates."),
+            t(f"Consultez l'offre de stage sur la page officielle (lien en bas de cette page) et vérifiez le niveau d'études, la durée et les dates demandés.",
+              f"Read the internship offer on the official page (link at the bottom of this page) and check the required level of study, duration and dates."),
             t("Créez votre compte sur le portail de recrutement de l'organisation et activez les alertes pour votre domaine.",
               "Create an account on the organisation's recruitment portal and turn on alerts for your field."),
             t("Adaptez votre CV et votre lettre de motivation à la mission (ScholarFit peut vous aider à les préparer).",
@@ -252,8 +252,8 @@ def application_steps(s: Scholarship) -> list[str]:
         ]
     if s.kind == "conference":
         return [
-            t(f"Lisez le programme et les conditions de participation sur le site officiel ({url}).",
-              f"Read the programme and participation conditions on the official website ({url})."),
+            t(f"Lisez le programme et les conditions de participation sur le site officiel (lien en bas de cette page).",
+              f"Read the programme and participation conditions on the official website (link at the bottom of this page)."),
             t("Si la conférence propose une prise en charge (travel grant, bourse de participation), déposez votre demande avant la date limite.",
               "If the conference offers funding (travel grant, participation grant), apply before the deadline."),
             t("Préparez ce qui est demandé : résumé de votre recherche ou de votre projet, CV, lettre de motivation.",
@@ -262,8 +262,8 @@ def application_steps(s: Scholarship) -> list[str]:
               "Once accepted, request the invitation letter for your visa and book your travel."),
         ]
     steps = [
-        t(f"Lisez l'appel à candidatures complet sur le site officiel ({url}) et vérifiez que vous remplissez chaque condition ci-dessus.",
-          f"Read the full call for applications on the official website ({url}) and check that you meet each condition above."),
+        t(f"Lisez l'appel à candidatures complet sur le site officiel (lien en bas de cette page) et vérifiez que vous remplissez chaque condition ci-dessus.",
+          f"Read the full call for applications on the official website (link at the bottom of this page) and check that you meet each condition above."),
     ]
     via = s.apply_via or "direct"
     if via == "universite":

@@ -124,7 +124,7 @@ def run(db: Session, source: Source, cfg: dict) -> tuple[int, int]:
         if rec["deadline"] and rec["deadline"] < date.today():
             continue
         try:
-            _, is_new = upsert(db, rec, source)
+            _, is_new = upsert(db, rec, source, review="publie")
         except ValueError:
             continue
         created += is_new

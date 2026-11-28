@@ -17,7 +17,7 @@ export default async function Page() {
   const { t } = await getT();
   return (
     <div className="mx-auto max-w-6xl space-y-12 py-6">
-      <Support />
+      <Support asPage />
       <section>
         <p className="eyebrow">{t("À quoi servent les dons")}</p>
         <div className="mt-5 grid gap-4 md:grid-cols-3">

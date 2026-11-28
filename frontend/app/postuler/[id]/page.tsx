@@ -6,7 +6,8 @@ import { notFound } from "next/navigation";
 import { DeadlineBadge } from "@/components/ScholarshipCard";
 import Icon from "@/components/Icon";
 import Offers from "@/components/Offers";
-import { applyUrl, deadlineInfo, formatAmount, formatDate } from "@/lib/api";
+import PersonalConditions from "@/components/PersonalConditions";
+import { applyUrl, deadlineInfo, deadlineText, formatAmount, formatDate } from "@/lib/api";
 import { COVERAGE, DEFAULT_STEPS, LINK, conditions, documents, loadScholarship } from "@/lib/scholarship-detail";
 import { getT } from "@/lib/i18n-server";
 import { countryName } from "@/lib/i18n";
@@ -43,7 +44,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   const fd = (d: string | null) => formatDate(d, lang);
   const facts: [string, string, string][] = [
     ["medal", t("Financement"), formatAmount(s, lang)],
-    ["calendar", t("Date limite"), s.deadline ? fd(s.deadline) : t("Variable selon le programme")],
+    ["calendar", t("Date limite"), deadlineText(s, lang)],
     ["cap", t("Niveaux"), s.levels.map((l) => t(meta.levels[l] ?? l).split(" : ").pop()).join(" · ") || t("Non précisé")],
     ["globe", t("Pays d'études"), s.study_countries.map((c) => countryName(c, lang, meta.countries[c])).join(", ") || t("Plusieurs pays")],
   ];
@@ -85,6 +86,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
 
       <div className="space-y-10">
         <Step n={++n} title={t("Vérifiez les conditions")}>
+          <PersonalConditions scholarshipId={s.id} />
           <ul className="space-y-2">
             {conds.map((c) => (
               <li key={c} className="card flex gap-3 px-4 py-3 text-sm">

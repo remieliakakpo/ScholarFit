@@ -29,7 +29,7 @@ const METHODS: Method[] = [
 const AMOUNTS = [1000, 2500, 5000, 10000];
 const fmt = (n: number, lang: Lang) => `${n.toLocaleString(locale(lang))} F CFA`;
 
-export default function Support({ compact = false }: { compact?: boolean }) {
+export default function Support({ compact = false, asPage = false }: { compact?: boolean; asPage?: boolean }) {
   const { t, lang } = useT();
   const [amount, setAmount] = useState<number | null>(2500);
   const [custom, setCustom] = useState("");
@@ -60,7 +60,9 @@ export default function Support({ compact = false }: { compact?: boolean }) {
       <div className="relative grid gap-8 lg:grid-cols-[1fr_1.15fr] lg:items-start">
         <div>
           <p className="eyebrow">{t("Soutenir ScholarFit")}</p>
-          <h2 className="mt-2 text-[1.65rem] sm:text-3xl lg:text-4xl">{t("Soutenez")} <span className="accent">{t("notre travail.")}</span></h2>
+          {asPage
+            ? <h1 className="mt-2 text-[1.65rem] sm:text-3xl lg:text-4xl">{t("Soutenez")} <span className="accent">{t("notre travail.")}</span></h1>
+            : <h2 className="mt-2 text-[1.65rem] sm:text-3xl lg:text-4xl">{t("Soutenez")} <span className="accent">{t("notre travail.")}</span></h2>}
           <p className="mt-3 max-w-md text-muted">
             {t("Chaque jour, notre équipe recherche, vérifie et met en ligne des bourses, des stages et des conférences du monde entier, et accompagne les étudiants dans leurs candidatures. Votre don nous permet de continuer et d'ouvrir ces opportunités au plus grand nombre.")}
           </p>

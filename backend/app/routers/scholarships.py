@@ -13,6 +13,7 @@ from ..deadlines import deadline_info
 from ..details import REQUIREMENTS
 from ..geo import REGIONS, WORLD, countries_in
 from ..vocab import COUNTRIES, DOMAINS, KIND_PATTERN, KINDS, LEVELS, NATIONALITY_GROUPS, expand_nationalities
+from ..visibility import public_filter
 
 router = APIRouter(prefix="/api", tags=["bourses"])
 
@@ -61,7 +62,7 @@ def search(db: Session, *, today: date | None = None, q: str | None = None, kind
     today = today or date.today()
     if enabled is not None and kind and kind not in enabled:
         return [], {}
-    stmt = select(Scholarship)
+    stmt = select(Scholarship).where(public_filter())
     if enabled is not None and not kind:
         stmt = stmt.where(Scholarship.kind.in_(enabled))
     if extra_where is not None:
@@ -85,6 +86,8 @@ def search(db: Session, *, today: date | None = None, q: str | None = None, kind
         items = [s for s in items if info[s.id].status in wanted]
     elif not include_expired:
         items = [s for s in items if info[s.id].status != "expiree"]
+    # Lien officiel mort (404, domaine disparu) : l'offre est retirée du site jusqu'à sa correction dans /admin
+    items = [s for s in items if s.link_status != "casse"]
     if region:
         zone = countries_in(region)
         items = [s for s in items if set(s.study_countries or []) & zone]
@@ -164,8 +167,11 @@ def stats_countries(include_expired: bool = False, kind: str | None = Query(None
     shown = enabled_kinds(db)
     if kind and kind not in shown:
         return []
-    stmt = select(Scholarship).where(Scholarship.kind == kind) if kind else select(Scholarship).where(Scholarship.kind.in_(shown))
+    stmt = select(Scholarship).where(public_filter())
+    stmt = stmt.where(Scholarship.kind == kind) if kind else stmt.where(Scholarship.kind.in_(shown))
     for s in db.scalars(stmt):
+        if s.link_status == "casse":
+            continue
         open_ = deadline_info(s, today).status != "expiree"
         if not include_expired and not open_:
             continue
@@ -196,7 +202,9 @@ def stats(db: Session = Depends(get_db)):
     shown = enabled_kinds(db)
     by_kind = {k: 0 for k in KINDS if k in shown}
     countries: set[str] = set()
-    for s in db.scalars(select(Scholarship).where(Scholarship.kind.in_(shown))):
+    for s in db.scalars(select(Scholarship).where(public_filter(), Scholarship.kind.in_(shown))):
+        if s.link_status == "casse":
+            continue
         st = deadline_info(s, today).status
         total += 1
         if st == "expiree":
@@ -220,7 +228,7 @@ def get_scholarship(key: str, db: Session = Depends(get_db)):
     s = db.get(Scholarship, int(key)) if key.isdigit() else db.scalars(select(Scholarship).where(Scholarship.slug == key)).first()
     from ..site_settings import enabled_kinds
 
-    if not s or (s.kind or "bourse") not in enabled_kinds(db):
+    if not s or s.review == "rejete" or (s.kind or "bourse") not in enabled_kinds(db):
         raise HTTPException(404, t("Bourse introuvable", "Scholarship not found"))
     if is_en():
         from ..translate import ensure_en

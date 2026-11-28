@@ -153,3 +153,79 @@ def country_in(code: str, name: str) -> str:
     if name.split(" ")[0].lower().endswith("e") and code not in _MASC_E:
         return f"en {name}"
     return f"au {name}"
+
+
+# ------------------------------------------------------------------ langue d'un texte
+_FR_WORDS = set("le la les des du de un une et est pour avec dans sur au aux en je j mon ma mes nous vous qui que pas ce cette ces son sa ses leur été très".split())
+_EN_WORDS = set("the and of to in for with on is are was were i my we our you your that this these an at by from as be have has will which".split())
+
+
+def detect_language(text: str | None) -> str | None:
+    """« fr » ou « en » selon les mots outils les plus fréquents ; None si le texte est trop court pour trancher."""
+    words = re.findall(r"[a-zà-ÿ]+", (text or "").lower())
+    if len(words) < 4:
+        return None
+    fr = sum(1 for w in words if w in _FR_WORDS) + 2 * len(re.findall(r"[éèêàùçô]", (text or "").lower()))
+    en = sum(1 for w in words if w in _EN_WORDS)
+    if fr == en:
+        return None
+    return "fr" if fr > en else "en"
+
+
+_EN_THE = {"US", "GB", "NL", "PH", "AE", "CZ", "DO", "GM", "CD", "CF", "BS", "MV", "SC", "KM", "SB", "MH", "VA"}
+
+
+def country_in_en(code: str, name: str) -> str:
+    """« in Germany », « in the United Kingdom », « in the Netherlands »."""
+    return f"in the {name}" if code in _EN_THE or name.startswith(("United ", "Republic ")) else f"in {name}"
+
+
+# Mots en -er/-ir/-re qui ne sont pas des verbes à l'infinitif
+_NOT_INFINITIVE = {"notre", "votre", "entre", "centre", "titre", "cadre", "genre", "ordre", "autre", "membre", "nombre", "libre",
+                   "premier", "dernier", "métier", "chantier", "quartier", "atelier", "dossier", "fichier", "pilier", "cahier",
+                   "papier", "laboratoire", "mémoire", "histoire", "filière", "matière", "carrière", "manière", "lumière", "frontière",
+                   "plusieurs", "leur", "pour", "sur", "hier", "fer", "mer", "hiver", "désir", "avenir", "plaisir", "loisir", "soir",
+                   "espoir", "savoir", "pouvoir", "devoir", "contre", "lettre", "théâtre", "ministre", "registre", "semestre",
+                   "trimestre", "master", "power", "computer", "chapitre", "après", "sinistre"}
+_FR_PRONOUN_START = re.compile(r"^(je|j'|j’|nous|on|il|elle|ils|elles|mon|ma|mes|notre|nos|ce|cet|cette|ces|le|la|les|l'|l’|un|une|des|du|ces|son|sa|ses|leur|leurs|en|dans|depuis|à|au|aux|grâce|avec|pendant|lors|après|avant|par|parce|car|puisque|comme|si)\b", re.I)
+_EN_VERBS = ("study", "studying", "return", "go", "take", "work", "build", "become", "join", "pursue", "contribute", "create", "develop",
+             "launch", "help", "train", "learn", "specialise", "specialize", "focus", "complete", "write", "research", "use", "set up",
+             "lead", "teach", "start", "found", "improve", "support", "strengthen", "apply", "come back", "move back")
+
+
+def is_infinitive_start(text: str, language: str = "fr") -> bool:
+    """La réponse commence par un verbe à l'infinitif (« suivre les cours… », « to build… »), donc par un fragment."""
+    t = (text or "").strip().lower()
+    if not t:
+        return False
+    if language == "en":
+        return t.startswith("to ") or any(re.match(rf"{re.escape(v)}\b", t) for v in _EN_VERBS)
+    if re.match(r"^(me|m'|m’|se|s')\s*\w", t):
+        return True
+    first = re.match(r"^([a-zà-ÿ]+)", t)
+    if not first:
+        return False
+    w = first.group(1)
+    return w not in _NOT_INFINITIVE and len(w) > 3 and w.endswith(("er", "ir", "re", "oir")) and not _FR_PRONOUN_START.match(t)
+
+
+def first_person(answer: str, lead_fr: str, lead_en: str, language: str = "fr") -> str:
+    """Réponse libre transformée en phrases complètes à la première personne.
+
+    « suivre les cours de réponse à incident » devient « Je souhaite suivre les cours de réponse à incident. »
+    Les réponses déjà rédigées (« Je compte… », « Le programme combine… ») sont seulement nettoyées.
+    """
+    a = (answer or "").strip().strip(".").strip()
+    if not a:
+        return ""
+    if is_infinitive_start(a, language):
+        if language == "en":
+            a = re.sub(r"^to\s+", "", a, flags=re.I)
+            a = f"{lead_en} {lower_first(a)}"
+        else:
+            a = f"{lead_fr} {lower_first(a)}"
+            a = re.sub(r"\b(je \w+) (me|m'|m’)\s*", r"\1 me ", a)
+            a = re.sub(r"\bme ([aeiouéèêh])", r"m'\1", a)
+    elif language == "en" and re.match(r"^i\b", a):
+        a = "I" + a[1:]
+    return as_sentences(a)

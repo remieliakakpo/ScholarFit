@@ -2,6 +2,10 @@
 
     python -m app.cli seed            # met la base à jour, charge les données d'exemple (+ comptes de démo si APP_ENV=dev)
     python -m app.cli create-admin EMAIL   # crée ou promeut un administrateur (mot de passe demandé ou tiré au hasard)
+    python -m app.cli make-admin EMAIL     # donne les droits d'administrateur à un compte existant
+    python -m app.cli check-config    # liste ce qui manque avant la mise en ligne
+    python -m app.cli test-email ADRESSE   # vérifie l'envoi des e-mails
+    python -m app.cli backup          # sauvegarde portable de toute la base (.json.gz)
     python -m app.cli collect         # lance toutes les sources activées (data/sources.json)
     python -m app.cli collect --source "Données d'exemple"
     python -m app.cli extract URL     # teste l'extraction d'une page (n'enregistre rien)
@@ -15,21 +19,19 @@ import logging
 import getpass
 import sys
 import secrets
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 
 from .config import get_settings
 from .db import SessionLocal, init_db
-from .models import Advisor, Application, Profile, Scholarship, Source, User
+from .models import Profile, Source, User
 from .scrapers.base import PoliteFetcher, RobotsDisallowed
 from .scrapers.collector import run_all, run_source
 from .scrapers.extract import extract
 from .security import hash_password
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
-
-DEMO_PASSWORD = "demo12345"
 
 
 def seed() -> None:
@@ -40,49 +42,42 @@ def seed() -> None:
         from .translate import load_seed_translations
 
         print(f"Version anglaise : {load_seed_translations(db)} fiche(s)")
-        if not get_settings().is_dev:
-            # En production, aucun compte à mot de passe connu : python -m app.cli create-admin EMAIL
-            db.commit()
-            return
-        verified = datetime.now(timezone.utc)
-        admin_email = get_settings().admin_email_list[0]
-        if not db.scalars(select(User).where(User.email == admin_email)).first():
-            db.add(User(email=admin_email, password_hash=hash_password("admin12345"), is_admin=True, profile=Profile(),
-                        email_verified_at=verified, terms_accepted_at=verified))
-            print(f"Compte admin : {admin_email} / admin12345")
-        demo = db.scalars(select(User).where(User.email == "demo@example.org")).first()
-        if not demo:
-            demo = User(email="demo@example.org", password_hash=hash_password(DEMO_PASSWORD),
-                        email_verified_at=verified, terms_accepted_at=verified)
-            demo.profile = Profile(
-                full_name="Awa Diop", birth_date=date(date.today().year - 22, 4, 12), nationalities=["SN"],
-                residence_country="SN", current_level="BAC3", target_level="BAC5", domain="informatique",
-                institution="Université Cheikh Anta Diop de Dakar", grade_average=15.2,
-                wished_countries=["FR", "CA", "DE"], languages={"fr": "natif", "en": "B2", "wo": "natif"},
-                language_scores={"IELTS": 6.5}, experiences="Stage de 3 mois en développement web chez une start-up de Dakar.\nTutorat en programmation pour 25 étudiants de L1.",
-                engagement="Membre fondatrice du club de robotique de la faculté (40 membres).",
-                project="Devenir ingénieure en intelligence artificielle appliquée à la santé et à l'agriculture au Sénégal.",
-            )
-            db.add(demo)
-            db.flush()
-            first = db.scalars(select(Scholarship).where(Scholarship.title.like("%Eiffel%"))).first()
-            if first:
-                db.add(Application(user_id=demo.id, scholarship_id=first.id, status="en_cours",
-                                   checklist={r: r == "cv" for r in first.requirements}))
-            print(f"Compte de démo : demo@example.org / {DEMO_PASSWORD}")
-        if not db.scalars(select(User).where(User.email == "conseiller@example.org")).first():
-            db.add(User(
-                email="conseiller@example.org", password_hash=hash_password("conseil12345"), profile=Profile(full_name="Moussa Ndiaye"),
-                email_verified_at=verified, terms_accepted_at=verified,
-                advisor=Advisor(
-                    display_name="Moussa Ndiaye",
-                    bio="Ancien boursier Eiffel (master en informatique à Paris), j'aide les candidats à choisir leurs bourses et à soigner leur dossier.",
-                    levels=["BAC3", "BAC5", "BAC7"], countries=["FR", "CA", "BE"], domains=["informatique", "ingenierie", "mathematiques"],
-                    languages=["fr", "en"], capacity=10,
-                ),
-            ))
-            print("Compte conseiller : conseiller@example.org / conseil12345")
+        from .demo import ensure_demo_accounts
+
+        ensure_demo_accounts(db, verbose=True)
         db.commit()
+    finally:
+        db.close()
+
+
+def create_admin(email: str, password: str | None) -> None:
+    from .security import password_problem
+
+    init_db()
+    email = email.strip().lower()
+    shown = None
+    if password is None:
+        typed = getpass.getpass("Mot de passe (vide = tiré au hasard) : ") if sys.stdin.isatty() else ""
+        password = typed or secrets.token_urlsafe(14)
+        shown = None if typed else password
+    problem = password_problem(password, email)
+    if problem:
+        raise SystemExit(problem)
+    db = SessionLocal()
+    try:
+        now = datetime.now(timezone.utc)
+        user = db.scalars(select(User).where(User.email == email)).first()
+        if user is None:
+            user = User(email=email, profile=Profile(), terms_accepted_at=now)
+            db.add(user)
+        user.password_hash = hash_password(password)
+        user.is_admin = True
+        user.email_verified_at = user.email_verified_at or now
+        user.token_version = (user.token_version or 0) + 1
+        db.commit()
+        print(f"Administrateur prêt : {email}")
+        if shown:
+            print(f"Mot de passe (affiché une seule fois, changez-le après connexion) : {shown}")
     finally:
         db.close()
 
@@ -135,6 +130,14 @@ def main() -> None:
     d.add_argument("--zones", type=int, default=5, help="nombre de zones du monde à parcourir (46 au total)")
     tr = sub.add_parser("translate", help="version anglaise des fiches qui n'en ont pas (IA)")
     tr.add_argument("--limit", type=int, default=500)
+    sub.add_parser("check-config", help="vérifie les réglages avant la mise en ligne")
+    ma = sub.add_parser("make-admin", help="donne les droits d'administrateur à un compte existant (adresse confirmée d'office)")
+    ma.add_argument("email")
+    te = sub.add_parser("test-email", help="envoie un e-mail d'essai pour vérifier EMAIL_BACKEND")
+    te.add_argument("to")
+    bk = sub.add_parser("backup", help="exporte toute la base dans un fichier .json.gz (sauvegarde portable)")
+    bk.add_argument("--dir", default="backups")
+    bk.add_argument("--keep", type=int, default=14, help="nombre de sauvegardes gardées")
     lk = sub.add_parser("check-links")
     lk.add_argument("--all", action="store_true", help="re-teste même les liens vérifiés récemment")
     args = parser.parse_args()
@@ -162,6 +165,36 @@ def main() -> None:
             finally:
                 f.close()
             print(json.dumps(rec, ensure_ascii=False, indent=2, default=str))
+        elif args.cmd == "make-admin":
+            from .models import User
+
+            u = db.scalars(select(User).where(User.email == args.email.strip().lower())).first()
+            if u is None:
+                print("Aucun compte avec cette adresse : créez d'abord le compte sur le site.")
+            else:
+                u.is_admin = True
+                u.email_verified = True
+                db.commit()
+                print(f"{u.email} est administrateur.")
+        elif args.cmd == "check-config":
+            from .launch import check_config
+
+            problems = check_config(db)
+            for level, msg in problems:
+                print(f"[{level}] {msg}")
+            print("Tout est prêt pour la mise en ligne." if not any(lv == "BLOQUANT" for lv, _ in problems) else "Corrigez les points BLOQUANT avant la mise en ligne.")
+        elif args.cmd == "test-email":
+            from .mailer import email_button, send_email
+
+            ok = send_email(db, args.to, "E-mail d'essai ScholarFit",
+                            "Bonjour,\n\nCet e-mail confirme que l'envoi depuis ScholarFit fonctionne.",
+                            button=email_button("Ouvrir ScholarFit", "/"), kind="essai")
+            db.commit()
+            print("E-mail envoyé." if ok else "Échec de l'envoi : voir le message ci-dessus et les réglages EMAIL_* du fichier .env.")
+        elif args.cmd == "backup":
+            from .launch import backup
+
+            print(f"Sauvegarde écrite : {backup(db, args.dir, args.keep)}")
         elif args.cmd == "nightly":
             from .scheduler import run_cycle
 

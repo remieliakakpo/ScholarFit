@@ -63,14 +63,18 @@ export default function ScholarshipCard({ s, match, meta, loggedIn, lockedScore 
     <article className="card flex overflow-hidden transition hover:shadow-[0_12px_40px_-20px_rgba(18,20,43,0.35)]">
       <div className="flex min-w-0 flex-1 flex-col gap-3 p-5">
         <div className="flex items-start gap-3">
-          <Initials name={s.organization} />
+          {s.study_countries.length === 1
+            ? <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-line bg-surface"><Flag code={s.study_countries[0]} className="h-5 w-7" /></span>
+            : s.study_countries.length > 1
+              ? <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-line bg-surface"><Icon name="globe" className="h-5 w-5 text-brand" /></span>
+              : <Initials name={s.organization} />}
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
               {lockedScore && !match && <Link href="/connexion?mode=inscription" className="rounded-full bg-night px-2 py-0.5 font-semibold text-[#3ee0a8] sm:hidden">{t("Votre score : créez un compte")}</Link>}
               {match && ch && <span className="rounded-full bg-night px-2 py-0.5 font-semibold text-white sm:hidden" style={{ color: ch.ring }}>{match.score} % · {t(ch.label)}</span>}
               {s.kind && s.kind !== "bourse" && <span className="rounded-full bg-brand-soft px-2 py-0.5 font-semibold text-brand">{s.kind_label ? t(s.kind_label) : s.kind === "stage" ? t("Stage") : t("Conférence")}</span>}
               <DeadlineBadge deadline={s.deadline} s={s} />
-              {s.full_funding && <span className="rounded-full bg-ok-soft px-2 py-0.5 font-semibold text-ok">{t("Financement complet")}</span>}
+              {s.full_funding && (!s.kind || s.kind === "bourse") && <span className="hidden rounded-full bg-ok-soft px-2 py-0.5 font-semibold text-ok sm:inline">{t("Financement complet")}</span>}
             </div>
             <h3 className="mt-1.5 text-lg leading-snug">
               <Link href={`/bourses/${s.id}`} className="hover:text-gold-dark">{s.title}</Link>

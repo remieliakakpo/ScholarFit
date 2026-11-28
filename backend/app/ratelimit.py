@@ -98,3 +98,13 @@ def _human(seconds: int) -> str:
         return f"{seconds} s"
     minutes = (seconds + 59) // 60
     return f"{minutes} min"
+
+
+def limit(bucket: str, max_hits: int, per_seconds: int):
+    """Dépendance FastAPI : au-delà de max_hits requêtes en per_seconds secondes par adresse, 429."""
+
+    def dep(request: Request) -> None:
+        if get_settings().rate_limit_enabled:
+            check(f"{bucket}:{client_ip(request)}", max_hits, per_seconds)
+
+    return dep

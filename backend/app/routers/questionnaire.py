@@ -17,12 +17,13 @@ from .. import i18n, offers
 from ..db import get_db
 from ..geo import REGIONS, region_of
 from ..i18n import t
-from ..matching import SITUATION_LABELS, Criteria, age_on, missing_minimum, rank, situation_labels
+from ..matching import SITUATION_LABELS, Criteria, age_on, missing_minimum, next_session, rank, situation_labels, widen_hint
 from ..models import Profile, Scholarship, User
 from ..schemas import MatchOut
 from ..security import optional_user
 from ..serializers import match_out
 from ..vocab import COUNTRIES, DOMAINS, LEVEL_ORDER, LEVELS, KIND_OR_ALL_PATTERN
+from ..visibility import public_filter
 
 router = APIRouter(prefix="/api", tags=["questionnaire et offres"])
 
@@ -158,6 +159,8 @@ class QuestionnaireOut(BaseModel):
     offers: list[dict]
     profile_saved: bool
     missing: list[str]
+    next_session: list[MatchOut] = []
+    widen_hint: str | None = None
 
 
 def _clean(a: dict) -> dict:
@@ -255,10 +258,12 @@ def submit(body: QuestionnaireIn, kind: str = Query("bourse", pattern=KIND_OR_AL
     from ..site_settings import enabled_kinds
 
     shown = enabled_kinds(db)
-    stmt = select(Scholarship).where(Scholarship.kind.in_(shown))
+    stmt = select(Scholarship).where(public_filter(), Scholarship.kind.in_(shown))
     if kind != "tout":
         stmt = stmt.where(Scholarship.kind == kind)
-    results, excluded = rank(list(db.scalars(stmt)), c, today, limit=500)
+    pool = list(db.scalars(stmt))
+    results, excluded = rank(pool, c, today, limit=500)
+    later = [match_out(m) for m in next_session(pool, c, today)] if user is not None else []
     dest = c.strict_destination()
     items = [match_out(m) for m in results]
     if dest:
@@ -275,6 +280,7 @@ def submit(body: QuestionnaireIn, kind: str = Query("bourse", pattern=KIND_OR_AL
         total_matches=len(results), destination_total=destination_total, has_destination=bool(dest), excluded_count=excluded, items=items, recommended_offer=rec,
         offers=[{**o, "recommended": o["code"] == rec} for o in offers.catalog()],
         profile_saved=user is not None, missing=missing_minimum(c),
+        next_session=later, widen_hint=widen_hint(destination_total if dest else len(results), c),
     )
 
 

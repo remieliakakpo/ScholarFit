@@ -3,10 +3,15 @@ import sys
 from pathlib import Path
 
 os.environ["APP_ENV"] = "dev"  # comptes de démo, cookie sans Secure (le client de test parle en HTTP)
-os.environ["DATABASE_URL"] = "sqlite:///./test_bourses.db"
+TEST_DB = Path(__file__).resolve().parent.parent / "test_bourses.db"
+os.environ["DATABASE_URL"] = "sqlite:///" + TEST_DB.as_posix()
 os.environ["ANTHROPIC_API_KEY"] = ""  # les tests tournent en mode hors-ligne
 os.environ["ADMIN_EMAILS"] = "admin@example.org"
 os.environ["AUTO_COLLECT_HOURS"] = "0"  # pas de collecte en arrière-plan pendant les tests
+os.environ["SMTP_HOST"] = ""  # e-mails écrits dans la console
+os.environ["EMAIL_BACKEND"] = "console"
+os.environ["DEMO_ACCOUNTS"] = "true"
+os.environ["PAYMENT_PROVIDER"] = "simulation"
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest  # noqa: E402
@@ -15,7 +20,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 @pytest.fixture(scope="session")
 def client():
-    db_file = Path("test_bourses.db")
+    db_file = TEST_DB
     from app.db import engine as _engine
 
     _engine.dispose()  # des tests unitaires ont pu ouvrir la base (suivi des coûts IA) : on la libère

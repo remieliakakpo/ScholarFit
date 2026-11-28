@@ -36,6 +36,8 @@ export type LetterData = {
   max_words?: number;
   scholarship_id: number;
   scholarship_title: string;
+  /** Remarques sur la version hors IA (langue du CV ou des réponses différente de celle de la lettre). */
+  notes?: string[];
 };
 
 export type Doc<T> = { id: number; kind: string; title: string; data: T; scholarship_id: number | null; updated_at: string | null };

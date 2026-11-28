@@ -47,6 +47,7 @@ export default function AuthPanel({ initialMode = "connexion", next, onClose, on
   const { t } = useT();
   const router = useRouter();
   const [mode, setMode] = useState<AuthMode>(initialMode);
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [consent, setConsent] = useState(false);
@@ -69,12 +70,14 @@ export default function AuthPanel({ initialMode = "connexion", next, onClose, on
     setError(null);
     try {
       const path = mode === "connexion" ? "/api/auth/login" : "/api/auth/register";
-      const body = mode === "connexion" ? { email, password } : { email, password, accept_terms: consent };
-      await api(path, { method: "POST", body: JSON.stringify(body) }); // l'API pose le cookie de session
+      const body = mode === "connexion" ? { email, password } : { name, email, password, accept_terms: consent };
+      const { home } = await api<{ home?: string }>(path, { method: "POST", body: JSON.stringify(body) }); // l'API pose le cookie de session
       setSignedIn(true);
       const safe = safeNext(next);
       onSuccess?.();
-      router.push(safe ?? (mode === "inscription" ? "/profil" : "/mes-bourses"));
+      // tableau de bord du rôle : Mes bourses (étudiant), espace conseiller, administration
+      router.push(safe ?? home ?? (mode === "inscription" ? "/profil" : "/mes-bourses"));
+      router.refresh();
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -114,9 +117,15 @@ export default function AuthPanel({ initialMode = "connexion", next, onClose, on
           </div>
           <h1 className="mt-7 text-[1.65rem] sm:text-3xl leading-tight">{isLogin ? <>{t("Ravis de vous")} <span className="accent">{t("revoir.")}</span></> : <>{t("Votre profil en")} <span className="accent">{t("cinq minutes.")}</span></>}</h1>
           <p className="mt-2 text-sm text-muted">
-            {isLogin ? <>{t("Retrouvez vos bourses et votre score.")}{SHOW_DEMO && <> {t("Démo :")} <span className="font-mono text-xs text-brand">{t("demo@example.org")}</span> / <span className="font-mono text-xs text-brand">{t("demo12345")}</span></>}</> : t("Un e-mail et un mot de passe. Ensuite, votre profil sert uniquement à trouver vos bourses.")}
+            {isLogin ? <>{t("Retrouvez vos bourses et votre score.")}{SHOW_DEMO && <> {t("Démo :")} <span className="font-mono text-xs text-brand">{t("demo@example.org")}</span> / <span className="font-mono text-xs text-brand">{t("demo12345")}</span></>}</> : t("Votre prénom, un e-mail et un mot de passe. Ensuite, votre profil sert uniquement à trouver vos bourses.")}
           </p>
           <form onSubmit={submit} className="relative mt-6 space-y-5">
+            {!isLogin && (
+              <div>
+                <label className="label" htmlFor="name">{t("Prénom ou nom d'utilisateur")}</label>
+                <input id="name" name="name" type="text" autoComplete="given-name" required minLength={2} maxLength={80} className="input" placeholder={t("Awa")} value={name} onChange={(e) => setName(e.target.value)} />
+              </div>
+            )}
             <div>
               <label className="label" htmlFor="email">{t("E-mail")}</label>
               <input id="email" name="email" type="email" autoComplete={isLogin ? "username" : "email"} inputMode="email" autoCapitalize="none" spellCheck={false} required className="input" placeholder={t("awa@email.com")} value={email} onChange={(e) => { setEmail(e.target.value); setTaken(false); }} onBlur={checkEmail} />
@@ -125,7 +134,10 @@ export default function AuthPanel({ initialMode = "connexion", next, onClose, on
               )}
             </div>
             <div>
-              <label className="label" htmlFor="password">{t("Mot de passe")}</label>
+              <div className="flex items-baseline justify-between gap-3">
+                <label className="label" htmlFor="password">{t("Mot de passe")}</label>
+                {isLogin && <Link href="/mot-de-passe-oublie" onClick={() => onClose?.()} className="text-xs font-semibold text-brand hover:underline">{t("Mot de passe oublié ?")}</Link>}
+              </div>
               <div className="relative">
                 <input id="password" name="password" type={show ? "text" : "password"} autoComplete={isLogin ? "current-password" : "new-password"} required minLength={isLogin ? 1 : 8} pattern={isLogin ? undefined : "(?=.*[A-Za-z])(?=.*\\d).{8,}"} title={isLogin ? undefined : t("8 caractères minimum, avec au moins une lettre et un chiffre")} className="input pr-10" placeholder={isLogin ? "••••••••" : t("8 caractères, une lettre et un chiffre")} value={password} onChange={(e) => setPassword(e.target.value)} />
                 <button type="button" onClick={() => setShow(!show)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-ink" aria-label={show ? t("Masquer le mot de passe") : t("Afficher le mot de passe")}><Icon name="eye" /></button>

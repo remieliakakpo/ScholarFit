@@ -7,6 +7,10 @@ import { Lang, clientLang, locale, translate } from "./i18n";
 export const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 const DOWN_FR = "Le serveur de ScholarFit ne répond pas. Vérifiez que la fenêtre « API ScholarFit » ouverte par start.ps1 tourne toujours, puis rechargez la page.";
 const DOWN = () => translate(clientLang(), DOWN_FR);
+// Route inconnue du serveur : en ligne, c'est presque toujours un backend resté sur une ancienne version.
+const OUTDATED_FR = "Cette fonction n'est pas disponible sur le serveur : il n'est sans doute pas à jour. Réessayez dans quelques minutes.";
+// Réponse qui n'est pas celle de l'API (page HTML) : adresse de l'API mal réglée côté site.
+const NOT_API_FR = "Le site ne joint pas correctement le serveur de ScholarFit. Réessayez dans quelques minutes.";
 // Simple indice « une session a été ouverte dans ce navigateur » (pas un secret) : évite d'appeler
 // /api/auth/me à chaque page pour un visiteur. L'API reste seule juge (cookie httpOnly).
 const SESSION_HINT = "sf_signed_in";
@@ -30,6 +34,16 @@ export function setSignedIn(on: boolean) {
     /* navigation privée */
   }
   window.dispatchEvent(new Event("auth-change"));
+}
+
+/** Compatibilité : l'API ne renvoie plus de jeton (cookie httpOnly). `getToken` dit seulement si une
+ *  session est ouverte ; `setToken(x)` marque la connexion (x non vide) ou la déconnexion (null). */
+export function getToken(): string | null {
+  return isSignedIn() ? "cookie" : null;
+}
+
+export function setToken(token: string | null) {
+  setSignedIn(!!token);
 }
 
 /** En-têtes communs. X-Requested-With est exigé par l'API sur toute modification (protection CSRF). */
@@ -78,7 +92,8 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     let msg = `${translate(clientLang(), "Erreur")} ${res.status}`;
     try {
       const data = await res.json();
-      if (typeof data.detail === "string") msg = data.detail;
+      if (res.status === 404 && data.detail === "Not Found") msg = translate(clientLang(), OUTDATED_FR);
+      else if (typeof data.detail === "string") msg = data.detail;
       else if (Array.isArray(data.detail)) msg = data.detail.map((d: { msg: string }) => d.msg).join(" ; ");
     } catch {
       /* corps vide */
@@ -86,7 +101,11 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     throw new ApiError(res.status, msg);
   }
   if (res.status === 204) return undefined as T;
-  return res.json();
+  try {
+    return (await res.json()) as T;
+  } catch {
+    throw new ApiError(res.status, translate(clientLang(), NOT_API_FR));
+  }
 }
 
 // ---------- Types ----------
@@ -118,6 +137,11 @@ export type Scholarship = {
   collected_at: string;
   verified_at: string | null;
   source_name: string | null;
+  deadline_estimated?: boolean;
+  previous_deadline?: string | null;
+  min_experience_years?: number | null;
+  statement_type?: string | null;
+  application_languages?: string[];
   // Champs ajoutés par la collecte mondiale (facultatifs : l'interface retombe sur les champs ci-dessus).
   eligibility_notes?: string[];
   kind?: "bourse" | "stage" | "conference" | "formation" | "concours" | "echange" | "fellowship" | "cours_en_ligne";
@@ -177,6 +201,8 @@ export type Profile = {
   language_scores: Record<string, number>;
   experiences: string | null;
   engagement: string | null;
+  interests: string | null;
+  work_experience_years: number | null;
   project: string | null;
   full_funding_only: boolean;
   situations: string[];
@@ -208,8 +234,38 @@ export function clearMetaCache() {
 }
 
 export function getMeta(): Promise<Meta> {
-  if (!metaCache) metaCache = api<Meta>("/api/meta").catch((e) => { metaCache = null; throw e; });
+  if (!metaCache) metaCache = api<unknown>("/api/meta").then(normalizeMeta).catch((e) => { metaCache = null; throw e; });
   return metaCache;
+}
+
+/** Profil complété par des valeurs par défaut : un serveur plus ancien (ou une base incomplète)
+ * peut omettre des champs, et la page Profil ne doit jamais planter pour autant. */
+export function normalizeProfile(raw: unknown): Profile {
+  if (!raw || typeof raw !== "object") throw new ApiError(0, translate(clientLang(), NOT_API_FR));
+  const r = raw as Partial<Profile>;
+  const arr = (v: unknown) => (Array.isArray(v) ? v.filter((x) => typeof x === "string") : []);
+  const obj = <V,>(v: unknown) => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, V>) : {});
+  return {
+    ...r,
+    full_name: r.full_name ?? null, birth_date: r.birth_date ?? null, residence_country: r.residence_country ?? null,
+    phone: r.phone ?? null, current_level: r.current_level ?? null, target_level: r.target_level ?? null,
+    domain: r.domain ?? null, institution: r.institution ?? null, grade_average: r.grade_average ?? null,
+    experiences: r.experiences ?? null, engagement: r.engagement ?? null, interests: r.interests ?? null, work_experience_years: r.work_experience_years ?? null, project: r.project ?? null,
+    cv_text: r.cv_text ?? null, completeness_tip: r.completeness_tip ?? null,
+    nationalities: arr(r.nationalities), diplomas: arr(r.diplomas), wished_countries: arr(r.wished_countries),
+    situations: arr(r.situations), missing_minimum: arr(r.missing_minimum),
+    languages: obj<string>(r.languages), language_scores: obj<number>(r.language_scores),
+    alerts_opt_in: !!r.alerts_opt_in, full_funding_only: !!r.full_funding_only, has_cv: !!r.has_cv,
+    minimum_ok: !!r.minimum_ok, completeness: typeof r.completeness === "number" ? r.completeness : 0,
+  };
+}
+
+/** Listes de référence (niveaux, domaines, pays…) toujours présentes, même vides. */
+function normalizeMeta(raw: unknown): Meta {
+  if (!raw || typeof raw !== "object") throw new ApiError(0, translate(clientLang(), NOT_API_FR));
+  const r = raw as Partial<Meta>;
+  const obj = (v: unknown) => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, string>) : {});
+  return { levels: obj(r.levels), domains: obj(r.domains), countries: obj(r.countries), statuses: obj(r.statuses), requirements: obj(r.requirements) };
 }
 
 // ---------- Mise en forme ----------
@@ -223,6 +279,18 @@ export function formatAmount(s: Scholarship, lang: Lang = clientLang()): string 
 export function formatDate(iso: string | null, lang: Lang = clientLang()): string {
   if (!iso) return translate(lang, "Date non précisée");
   return new Date(iso + "T00:00:00").toLocaleDateString(locale(lang), { day: "numeric", month: "long", year: "numeric" });
+}
+
+export function formatMonth(iso: string | null, lang: Lang = clientLang()): string {
+  if (!iso) return translate(lang, "Date non précisée");
+  return new Date(iso + "T00:00:00").toLocaleDateString(locale(lang), { month: "long", year: "numeric" });
+}
+
+/** Date limite à afficher : une date reconstituée d'après la session précédente n'est jamais présentée comme exacte. */
+export function deadlineText(s: Scholarship, lang: Lang = clientLang()): string {
+  if (!s.deadline) return translate(lang, "Variable selon le programme");
+  if (s.deadline_estimated && !s.verified_at) return translate(lang, "Attendue vers {month} (à confirmer)", { month: formatMonth(s.deadline, lang) });
+  return formatDate(s.deadline, lang);
 }
 
 export function daysUntil(iso: string | null): number | null {
@@ -281,7 +349,13 @@ export type StudentSummary = {
   language_scores: Record<string, number>; project: string | null; experiences: string | null; cv_text: string | null; completeness: number;
 };
 
+export type CoachingFile = {
+  id: number; author_role: string; category: "livrable" | "piece" | "preuve_depot"; filename: string;
+  content_type: string; size: number; note: string | null; created_at: string; mine: boolean;
+};
+
 export type CoachingDetail = Coaching & {
+  files?: CoachingFile[];
   steps: Step[];
   messages: CoachingMessage[];
   meetings: Meeting[];
@@ -344,7 +418,10 @@ export function deadlineInfo(s: Scholarship, lang: Lang = clientLang()): Deadlin
   let status = s.deadline_status;
   if (!status) status = days === null ? "inconnue" : days < 0 ? "expiree" : days <= 14 ? "urgente" : days <= 45 ? "bientot" : "ouverte";
   const t = (fr: string, v?: Record<string, string | number>) => translate(lang, fr, v);
-  const label = days === null ? t("Date limite variable") : days < 0 ? t("Clôturée le {date}", { date: formatDate(s.deadline, lang) }) : days === 0 ? t("Clôture aujourd'hui") : `${formatDate(s.deadline, lang)} · ${t("J-{n}", { n: days })}`;
+  const estimated = !!(s.deadline_estimated && !s.verified_at);
+  const label = days === null ? t("Date limite variable") : days < 0 ? t("Clôturée le {date}", { date: formatDate(s.deadline, lang) })
+    : estimated ? t("Attendue vers {month}", { month: formatMonth(s.deadline, lang) })
+    : days === 0 ? t("Clôture aujourd'hui") : `${formatDate(s.deadline, lang)} · ${t("J-{n}", { n: days })}`;
   return { status, days, label, long: s.deadline_label ?? null };
 }
 

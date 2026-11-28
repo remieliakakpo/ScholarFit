@@ -183,8 +183,8 @@ def test_translations_queued_once(client, ai_on, monkeypatch):
         s.translations = {}  # plus de version anglaise : à traduire
         db.commit()
         try:
-            first = translate_missing(db, limit=5)
-            second = translate_missing(db, limit=5)
+            first = translate_missing(db, limit=100_000)
+            second = translate_missing(db, limit=100_000)
             assert first >= 1 and second == 0  # déjà en file : pas de doublon
             assert s.id in batch.pending_targets(db, "translate", "scholarship_id")
         finally:  # base partagée par les autres tests : on remet la fiche et la file en l'état

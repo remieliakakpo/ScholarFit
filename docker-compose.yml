@@ -37,6 +37,16 @@ services:
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM: ${SMTP_FROM:-ScholarFit <no-reply@example.org>}
       SENTRY_DSN: ${SENTRY_DSN:-}
+      API_PUBLIC_URL: ${API_PUBLIC_URL:-http://localhost:8000}
+      # Paiement en ligne : cinetpay (clés du tableau de bord CinetPay) ou manuel (validation dans /admin)
+      PAYMENT_PROVIDER: ${PAYMENT_PROVIDER:-manuel}
+      CINETPAY_APIKEY: ${CINETPAY_APIKEY:-}
+      CINETPAY_SITE_ID: ${CINETPAY_SITE_ID:-}
+      CINETPAY_SECRET_KEY: ${CINETPAY_SECRET_KEY:-}
+      EMAIL_BACKEND: ${EMAIL_BACKEND:-}
+      BREVO_API_KEY: ${BREVO_API_KEY:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RELIEFWEB_APPNAME: ${RELIEFWEB_APPNAME:-}
       AI_DAILY_BUDGET_USD: ${AI_DAILY_BUDGET_USD:-0}
     # Pas de port publié : le navigateur passe par le site (/api relayé par Next.js).
     # Pour regarder l'API depuis la machine : décommenter (adresse locale seulement).
