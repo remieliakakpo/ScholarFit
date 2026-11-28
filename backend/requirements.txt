@@ -14,3 +14,4 @@ pycountry==26.2.16
 reportlab==5.0.1
 alembic==1.20.1
 sentry-sdk[fastapi]==2.75.0
+pillow==13.0.0

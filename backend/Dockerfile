@@ -6,7 +6,8 @@ RUN pip install --no-cache-dir -r requirements-postgres.txt
 COPY app ./app
 COPY alembic.ini ./
 COPY migrations ./migrations
-RUN useradd --create-home --uid 10001 scholarfit && chown -R scholarfit /app
+# uploads/ créé ici pour que le volume Docker hérite des droits de l'utilisateur de l'API
+RUN useradd --create-home --uid 10001 scholarfit && mkdir -p /app/uploads && chown -R scholarfit /app
 USER scholarfit
 EXPOSE 8000
 # Migrations de la base et données d'exemple à chaque démarrage (idempotent). Comptes de démo

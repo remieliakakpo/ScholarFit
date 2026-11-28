@@ -41,7 +41,7 @@ SCHEMA = {
     "required": list(FIELDS),
     "additionalProperties": False,
 }
-SYSTEM = """You translate scholarship, internship and conference listings from French into English for a student platform.
+SYSTEM = """You translate opportunity listings (scholarships, internships, conferences, trainings, competitions, exchange programmes, fellowships, online courses) from French into English for a student platform.
 Rules:
 - Keep the meaning exactly; do not add or remove conditions, numbers, dates or names.
 - Title: use the official English name of the programme when it is well known (e.g. "Bourse d'excellence Eiffel" becomes

@@ -34,7 +34,7 @@ class Scholarship(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     slug: Mapped[str] = mapped_column(String(200), unique=True, index=True)
     title: Mapped[str] = mapped_column(String(300))
-    # Type d'opportunité : bourse | stage | conference (même fiche, même matching)
+    # Type d'opportunité : voir vocab.KINDS (bourse, stage, conference, formation, concours, echange, fellowship, cours_en_ligne)
     kind: Mapped[str] = mapped_column(String(20), default="bourse", index=True)
     organization: Mapped[str] = mapped_column(String(300))
     official_url: Mapped[str] = mapped_column(String(500))
@@ -422,6 +422,9 @@ class CreditOrder(Base):
     status: Mapped[str] = mapped_column(String(20), default="en_verification")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Preuve de paiement (capture du reçu), rangée hors du site public : voir app/proofs.py
+    proof_path: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    proof_uploaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     user: Mapped[User] = relationship(back_populates="credit_orders")
 
@@ -538,3 +541,14 @@ class AICache(Base):
     key: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     value: Mapped[dict] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class SiteSetting(Base):
+    """Réglage du site modifiable depuis l'administration (ex. « kinds_enabled » : types d'offres affichés)."""
+
+    __tablename__ = "site_settings"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(String(60), unique=True, index=True)
+    value: Mapped[dict] = mapped_column(JSON, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

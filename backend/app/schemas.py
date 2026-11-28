@@ -56,7 +56,7 @@ class UserOut(ORM):
 
 # ---------- Bourses ----------
 class ScholarshipBase(BaseModel):
-    kind: str = "bourse"  # bourse | stage | conference
+    kind: str = "bourse"  # voir vocab.KINDS
     title: str
     organization: str
     official_url: str

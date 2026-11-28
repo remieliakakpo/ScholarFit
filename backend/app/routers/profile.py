@@ -16,7 +16,7 @@ from ..security import current_user
 from ..serializers import match_out
 from ..geo import REGIONS
 from ..offers import HELP_PREFERENCES
-from ..vocab import COUNTRIES, DOMAINS, LEVELS
+from ..vocab import COUNTRIES, DOMAINS, LEVELS, KIND_OR_ALL_PATTERN
 
 router = APIRouter(prefix="/api", tags=["profil et matching"])
 MAX_UPLOAD = 5 * 1024 * 1024
@@ -149,15 +149,17 @@ async def upload_cv(file: UploadFile = File(...), user: User = Depends(current_u
 
 
 @router.get("/matches", response_model=MatchesOut)
-def matches(limit: int = 30, kind: str = Query("bourse", pattern="^(bourse|stage|conference|tout)$"), user: User = Depends(current_user), db: Session = Depends(get_db)):
+def matches(limit: int = 30, kind: str = Query("bourse", pattern=KIND_OR_ALL_PATTERN), user: User = Depends(current_user), db: Session = Depends(get_db)):
     p = get_profile(user, db)
     c = Criteria.from_profile(p)
     missing = missing_minimum(c)
     if missing:
         return MatchesOut(minimum_ok=False, missing_minimum=missing, excluded_count=0, items=[])
+    from ..site_settings import enabled_kinds
+
+    shown = enabled_kinds(db)
     stmt = select(Scholarship).where(Scholarship.status != "expiree")
-    if kind != "tout":
-        stmt = stmt.where(Scholarship.kind == kind)
+    stmt = stmt.where(Scholarship.kind.in_(shown)) if kind == "tout" else stmt.where(Scholarship.kind == kind, Scholarship.kind.in_(shown))
     scholarships = list(db.scalars(stmt))
     results, excluded = rank(scholarships, c, limit=limit)
     return MatchesOut(minimum_ok=True, missing_minimum=[], excluded_count=excluded, items=[match_out(m) for m in results])

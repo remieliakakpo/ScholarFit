@@ -92,12 +92,22 @@ def clean(record: dict) -> dict:
     return out
 
 
+KIND_RULES = [  # ordre : du plus précis au plus général
+    ("cours_en_ligne", r"\b(online course|online courses|cours en ligne|mooc|e-learning|free course|certificate course|coursera|edx)\b"),
+    ("concours", r"\b(concours|competition|contest|challenge|hackathon|prize|prix|award|olympiad|olympiade)\b"),
+    ("echange", r"\b(exchange program|exchange programme|programme d'échange|échange|summer school|école d'été|winter school|camp|youth exchange)\b"),
+    ("fellowship", r"\b(fellowship|fellowships|fellows|fellow program|leadership program)\b"),
+    ("formation", r"\b(training|trainings|formation|bootcamp|workshop|atelier|masterclass|academy)\b"),
+    ("stage", r"\b(stage|stages|internship|internships|traineeship|stagiaire|intern)\b"),
+    ("conference", r"\b(conférence|conference|colloque|summit|sommet|forum|symposium|congrès|congress)\b"),
+]
+
+
 def guess_kind(text: str) -> str:
     t = text.lower()
-    if re.search(r"\b(stage|stages|internship|internships|traineeship|stagiaire|intern)\b", t):
-        return "stage"
-    if re.search(r"\b(conférence|conference|colloque|summit|sommet|forum|symposium|congrès|congress|workshop|atelier)\b", t):
-        return "conference"
+    for kind, pattern in KIND_RULES:
+        if re.search(pattern, t):
+            return kind
     return "bourse"
 
 
@@ -196,9 +206,12 @@ def org_from_url(url: str) -> str:
 
 
 def _crawl_detail_pages(db: Session, source: Source, urls: list[str], fetcher: PoliteFetcher, limit: int,
-                        aggregator: bool = False, kind: str | None = None) -> tuple[int, int]:
+                        aggregator: bool = False, kind: str | None = None, kinds: dict[str, str] | None = None,
+                        fetch=None, defaults: dict | None = None, overrides: dict | None = None) -> tuple[int, int]:
     """``aggregator`` : site qui relaie des offres (Afri-Carrières, Opportunity Desk…). On garde la page vue
-    dans ``source_page`` et on remplace le lien par celui du site officiel de l'organisme quand on le trouve."""
+    dans ``source_page`` et on remplace le lien par celui du site officiel de l'organisme quand on le trouve.
+    ``fetch`` : lecture d'une annonce autre qu'une page web (fiche d'une API mise en HTML, ex. Campus Bourses).
+    ``defaults`` : valeurs des champs restés vides ; ``overrides`` : valeurs imposées par la source."""
     import hashlib
 
     from ..models import SeenPage
@@ -216,7 +229,7 @@ def _crawl_detail_pages(db: Session, source: Source, urls: list[str], fetcher: P
         urls = [u for u in urls if u not in known]
     for url in urls[:limit]:
         try:
-            html = fetcher.get(url)
+            html = fetch(url) if fetch else fetcher.get(url)
         except RobotsDisallowed:
             log.info("robots.txt interdit %s : ignoré", url)
             continue
@@ -234,8 +247,11 @@ def _crawl_detail_pages(db: Session, source: Source, urls: list[str], fetcher: P
             db.add(page)
             seen[url] = page
         page.content_hash, page.last_seen_at = digest, now
-        ctx = {"url": url, "source_id": source.id, "aggregator": aggregator, "kind": kind,
-               "official_link": official_link(html, url) if aggregator else None}
+        ctx = {"url": url, "source_id": source.id, "aggregator": aggregator, "kind": (kinds or {}).get(url) or kind,
+               # type donné par la catégorie du site (classement fait par ses rédacteurs) : il prime
+               "category_kind": (kinds or {}).get(url),
+               "official_link": official_link(html, url) if aggregator else None,
+               "defaults": defaults or {}, "overrides": overrides or {}}
         if batch and not local:  # premier passage envoyé avec les autres à la fin du passage, moitié prix
             from ..ai.batch import enqueue
 
@@ -284,7 +300,13 @@ def finish_record(db: Session, source: Source | None, record: dict | None, ctx: 
             record["official_url"] = ctx.get("official_link") or url
         if record.get("organization") == name:
             record["organization"] = org_from_url(record["official_url"]) or name
-    if ctx.get("kind") and not record.get("kind"):
+    for key, value in (ctx.get("defaults") or {}).items():
+        if not record.get(key):
+            record[key] = value
+    record.update(ctx.get("overrides") or {})
+    if ctx.get("category_kind"):
+        record["kind"] = ctx["category_kind"]
+    elif ctx.get("kind") and not record.get("kind"):
         record["kind"] = ctx["kind"]
     try:
         _, is_new = upsert(db, record, source)
@@ -298,9 +320,7 @@ def run_rss(db: Session, source: Source, cfg: dict) -> tuple[int, int]:
     fetcher = PoliteFetcher()
     try:
         root = ET.fromstring(fetcher.get(source.url))
-        links = [el.text.strip() for el in root.iter() if el.tag.endswith("link") and el.text and el.text.strip().startswith("http")]
-        links += [el.attrib["href"] for el in root.iter() if el.tag.endswith("link") and "href" in el.attrib]
-        links = [l for l in dict.fromkeys(links) if l.rstrip("/") != source.url.rstrip("/")]
+        links = [l for l in dict.fromkeys(feed_item_links(root)) if l.rstrip("/") != source.url.rstrip("/")]
         return _crawl_detail_pages(db, source, links, fetcher, cfg.get("limit", 30))
     finally:
         fetcher.close()
@@ -326,10 +346,30 @@ def run_ai_discovery(db: Session, source: Source, cfg: dict) -> tuple[int, int]:
     return _run(db, source, cfg)
 
 
-ARTICLE_HINT = re.compile(r"(bourse|scholarship|fellowship|stage|internship|traineeship|conference|conférence|summit|sommet|forum|colloque|programme|program|award|grant|prix)", re.I)
+ARTICLE_HINT = re.compile(r"(bourse|scholarship|fellowship|stage|internship|traineeship|conference|conférence|summit|sommet|forum|"
+                          r"colloque|programme|program|award|grant|prix|training|formation|bootcamp|competition|contest|challenge|"
+                          r"hackathon|exchange|summer-school|school|camp|course|cours|mooc)", re.I)
 
 
 JOB_HINT = re.compile(r"(recrute|recrutement|emploi|job|jobs|cdi|cdd|vacancy|hiring|offre-d-emploi)", re.I)
+
+
+def feed_item_links(root: ET.Element) -> list[str]:
+    """Liens des articles d'un flux RSS (<item><link>) ou Atom (<entry><link href>), sans le lien du flux
+    lui-même (page d'accueil ou de catégorie), qui n'est pas une annonce."""
+    links = []
+    for el in root.iter():
+        tag = el.tag.rsplit("}", 1)[-1]
+        if tag not in ("item", "entry"):
+            continue
+        for child in el:
+            if child.tag.rsplit("}", 1)[-1] != "link":
+                continue
+            url = (child.text or child.get("href") or "").strip()
+            if url.startswith("http"):
+                links.append(url)
+                break
+    return links
 
 
 def run_site(db: Session, source: Source, cfg: dict) -> tuple[int, int]:
@@ -343,16 +383,30 @@ def run_site(db: Session, source: Source, cfg: dict) -> tuple[int, int]:
     base = source.url.rstrip("/")
     host = urlparse(base).netloc
     links: list[str] = []
+    kinds: dict[str, str] = {}  # type donné par la catégorie du flux (« feeds » : {"url", "kind"})
     try:
-        feeds = cfg.get("feeds", [base + "/feed/"])
+        from ..site_settings import enabled_kinds
+
+        shown = enabled_kinds(db) if db is not None else None
+        feeds = [f if isinstance(f, dict) else {"url": f} for f in cfg.get("feeds", [base + "/feed/"])]
+        # catégorie d'un type masqué dans l'administration : pas lue (aucun coût d'IA)
+        feeds = [f for f in feeds if not (shown is not None and f.get("kind") and f["kind"] not in shown)]
         pages = int(cfg.get("feed_pages", 1))
-        feeds = [f if n == 1 else f"{f}{'&' if '?' in f else '?'}paged={n}" for f in feeds for n in range(1, pages + 1)]
         for feed in feeds:
-            try:
-                root = ET.fromstring(fetcher.get(feed))
-                links += [el.text.strip() for el in root.iter() if el.tag.endswith("link") and el.text and el.text.strip().startswith("http")]
-            except Exception as e:  # noqa: BLE001 - pas de flux : on passe aux pages
-                log.info("Pas de flux %s (%s)", feed, e)
+            for n in range(1, pages + 1):
+                url = feed["url"] if n == 1 else f"{feed['url']}{'&' if '?' in feed['url'] else '?'}paged={n}"
+                try:
+                    root = ET.fromstring(fetcher.get(url))
+                except Exception as e:  # noqa: BLE001 - pas de flux (ou plus de page) : on passe au suivant
+                    log.info("Pas de flux %s (%s)", url, e)
+                    break
+                found = feed_item_links(root)
+                for link in found:
+                    if JOB_HINT.search(urlparse(link).path) and not re.search(r"(stage|intern|trainee)", link, re.I):
+                        continue  # offre d'emploi : écartée avant toute lecture (et tout coût d'IA)
+                    links.append(link)
+                    if feed.get("kind"):
+                        kinds.setdefault(link, feed["kind"])
         if len(links) < 5:
             for path in cfg.get("paths", ["/"]):
                 page = urljoin(base + "/", path.lstrip("/"))
@@ -374,10 +428,19 @@ def run_site(db: Session, source: Source, cfg: dict) -> tuple[int, int]:
         pattern = cfg.get("link_pattern")
         if pattern:
             links = [l for l in links if re.search(pattern, l)]
+        exclude = cfg.get("exclude_pattern")  # guides, conseils, visas… : jamais des opportunités
+        if exclude:
+            links = [l for l in links if not re.search(exclude, l, re.I)]
         links = [l for l in dict.fromkeys(links) if l.rstrip("/") != base]
-        return _crawl_detail_pages(db, source, links, fetcher, limit, aggregator=True, kind=cfg.get("kind"))
+        return _crawl_detail_pages(db, source, links, fetcher, limit, aggregator=True, kind=cfg.get("kind"), kinds=kinds)
     finally:
         fetcher.close()
+
+
+def run_campusbourses(db: Session, source: Source, cfg: dict) -> tuple[int, int]:
+    from .campusbourses import run
+
+    return run(db, source, cfg)
 
 
 def run_reliefweb(db: Session, source: Source, cfg: dict) -> tuple[int, int]:
@@ -387,7 +450,7 @@ def run_reliefweb(db: Session, source: Source, cfg: dict) -> tuple[int, int]:
 
 
 CONNECTORS = {"json": run_json, "rss": run_rss, "page_list": run_page_list, "ai_discovery": run_ai_discovery, "site": run_site,
-              "reliefweb": run_reliefweb}
+              "reliefweb": run_reliefweb, "campusbourses": run_campusbourses}
 
 
 def load_source_configs() -> list[dict]:
@@ -405,8 +468,9 @@ def sync_sources(db: Session) -> list[Source]:
         src.method = cfg.get("method", "page")
         src.connector = cfg["connector"]
         src.frequency_hours = cfg.get("frequency_hours", 168)
-        if src.enabled is None:
-            src.enabled = cfg.get("enabled", True)
+        # sources.json fait foi (rien d'autre ne change ce réglage) : activer ou désactiver une source
+        # dans le fichier s'applique aussi à une base existante
+        src.enabled = cfg.get("enabled", True)
         out.append(src)
     db.flush()
     return out

@@ -79,7 +79,7 @@ export default async function Home() {
       </section>
 
       {/* Stages et conférences */}
-      <section id="stages" className="mx-auto max-w-6xl scroll-mt-20 px-4 pt-20 sm:px-6 sm:pt-24">
+      <section id="stages" className="kinds-section mx-auto max-w-6xl scroll-mt-20 px-4 pt-20 sm:px-6 sm:pt-24">
         <Reveal>
           <p className="eyebrow">{t("Au-delà des bourses")}</p>
           <h2 className="mt-3 max-w-2xl text-[1.9rem] leading-tight sm:text-5xl">{t("Stages et conférences,")} <span className="accent">{t("partout dans le monde.")}</span></h2>

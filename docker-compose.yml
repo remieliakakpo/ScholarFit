@@ -42,6 +42,9 @@ services:
     # Pour regarder l'API depuis la machine : décommenter (adresse locale seulement).
     # ports:
     #   - "127.0.0.1:8000:8000"
+    # Preuves de paiement envoyées par les étudiants (privées, hors du site public)
+    volumes:
+      - uploads:/app/uploads
     depends_on:
       db:
         condition: service_healthy
@@ -60,3 +63,4 @@ services:
 
 volumes:
   pgdata:
+  uploads:

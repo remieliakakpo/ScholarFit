@@ -27,7 +27,7 @@ from ..ai.client import ask_json, ask_web
 from ..config import get_settings
 from ..linkcheck import BROWSER_UA, check_url
 from ..models import Source
-from ..vocab import DOMAINS, LEVELS
+from ..vocab import DOMAINS, LEVELS, KINDS
 
 log = logging.getLogger(__name__)
 STATE = Path(__file__).resolve().parent.parent.parent / ".cache" / "discovery_state.json"
@@ -81,6 +81,12 @@ ZONES = [
     ("Stages en Asie, au Moyen-Orient et en Océanie", "stages rémunérés ouverts aux étudiants internationaux au Japon, en Corée, en Chine, à Singapour, aux Émirats, au Qatar, en Australie", "stage"),
     ("Stages dans les ONG et fondations internationales", "stages dans les grandes ONG et fondations (Croix-Rouge, MSF, Oxfam, Save the Children, Plan International, Fondation Gates, Mastercard Foundation)", "stage"),
     ("Conférences et sommets pour étudiants", "conférences, sommets, forums et écoles d'été qui offrent une prise en charge (travel grant, bourse de participation) aux étudiants et jeunes chercheurs", "conference"),
+    # Autres types d'opportunités
+    ("Formations courtes et bootcamps", "formations courtes, bootcamps, ateliers et trainings gratuits ou financés pour étudiants et jeunes diplômés, en ligne ou en présentiel", "formation"),
+    ("Concours, prix et hackathons", "concours, compétitions d'innovation, prix, hackathons et challenges ouverts aux étudiants et jeunes, avec récompense ou voyage", "concours"),
+    ("Programmes d'échange et écoles d'été", "programmes d'échange, écoles d'été et d'hiver, camps et programmes de mobilité jeunesse financés", "echange"),
+    ("Fellowships et programmes de leadership", "fellowships, programmes de leadership et de recherche rémunérés pour jeunes professionnels et chercheurs", "fellowship"),
+    ("Cours en ligne et certificats", "cours en ligne, MOOC et certificats gratuits ou avec aide financière (Coursera, edX, universités, organisations internationales)", "cours_en_ligne"),
     ("Conférences en Afrique", "conférences scientifiques, sommets de la jeunesse et forums en Afrique ouverts aux étudiants, avec dates et conditions de participation", "conference"),
 ]
 
@@ -98,7 +104,7 @@ Règles :
 ITEM_SCHEMA = {
     "type": "object",
     "properties": {
-        "kind": {"type": "string", "enum": ["bourse", "stage", "conference"]},
+        "kind": {"type": "string", "enum": list(KINDS)},
         "title": {"type": "string"},
         "organization": {"type": "string"},
         "official_url": {"type": "string"},
@@ -141,7 +147,7 @@ LIST_SCHEMA = {
 }
 
 STRUCTURE_SYSTEM = """Transforme ces notes de recherche en fiches JSON (bourses, stages ou conférences). Réponds uniquement avec le JSON.
-- kind : bourse, stage ou conference. event_start / event_end : dates de la conférence ou du stage (AAAA-MM-JJ) ou null.
+- kind : bourse, stage, conference, formation, concours, echange (échange, école d'été, camp), fellowship ou cours_en_ligne. event_start / event_end : dates de la conférence ou du stage (AAAA-MM-JJ) ou null.
 - city : ville ; remote : participation en ligne possible ; duration : durée d'un stage en clair.
 - levels : diplôme financé (BAC = première année d'université, BAC3 = licence/bachelor, BAC5 = master, BAC7 = doctorat ou post-doc).
 - study_countries, eligible_nationalities : codes ISO alpha-2 ; eligible_nationalities = ["ALL"] si ouvert à tous ;
@@ -171,7 +177,12 @@ def search_zone(name: str, scope: str, max_searches: int, kind: str = "bourse") 
     today = date.today().isoformat()
     what = {"bourse": "bourses distinctes, de préférence entièrement financées",
             "stage": "stages distincts, de préférence rémunérés",
-            "conference": "conférences distinctes, de préférence avec prise en charge des participants"}[kind]
+            "conference": "conférences distinctes, de préférence avec prise en charge des participants",
+            "formation": "formations courtes distinctes (ateliers, bootcamps, trainings), de préférence gratuites ou financées",
+            "concours": "concours, compétitions, prix et hackathons distincts ouverts aux étudiants et jeunes",
+            "echange": "programmes d'échange, écoles d'été et camps distincts, de préférence financés",
+            "fellowship": "fellowships et programmes de leadership ou de recherche distincts, de préférence rémunérés",
+            "cours_en_ligne": "cours en ligne et certificats distincts, de préférence gratuits ou avec aide financière"}[kind]
     notes = ask_web(
         SEARCH_SYSTEM,
         f"Nous sommes le {today}. Zone : {name}. Cherche : {scope}. Trouve jusqu'à 15 {what}, "
@@ -200,6 +211,10 @@ def run_ai_discovery(db: Session, source: Source, cfg: dict) -> tuple[int, int]:
     for i in _zone_index(int(cfg.get("zones_per_run", 5))):
         name, scope, *rest = ZONES[i]
         kind = rest[0] if rest else "bourse"
+        from ..site_settings import enabled_kinds
+
+        if kind not in enabled_kinds(db):  # type masqué dans l'administration : zone sautée (aucun coût)
+            continue
         if s.ai_use_batch:  # recherche maintenant, mise en forme dans le lot (moitié prix)
             from ..ai.batch import enqueue
 
